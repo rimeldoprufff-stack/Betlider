@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>BTLIDER</title>
+  <style>
+    html,body{height:100%;margin:0;background:#07090d;color:#e8edf7;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+    #app{position:fixed;inset:0;display:flex;flex-direction:column;}
+    #topbar{height:54px;flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:0 12px;
+      background:linear-gradient(180deg, rgba(20,26,38,.92), rgba(10,12,18,.92)); border-bottom:1px solid rgba(255,255,255,.06);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    }
+    #brand{font-weight:800;letter-spacing:.6px}
+    #chips{margin-left:auto;display:flex;gap:8px;align-items:center;}
+    .chip{font-size:12px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
+    .chip strong{font-weight:800}
+    #frameWrap{position:relative;flex:1 1 auto;min-height:0;}
+    #appFrame{position:absolute;inset:0;width:100%;height:100%;border:0;background:#07090d;}
+    #splash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;
+      background:radial-gradient(1200px 800px at 50% 30%, rgba(44,56,86,.45), rgba(10,12,18,.94));
+      z-index:50;
+    }
+    #splash h1{margin:0;font-size:18px;font-weight:800}
+    #splash p{margin:0;font-size:12px;opacity:.8;text-align:center;max-width:320px;line-height:1.35}
+    #bar{width:min(360px,78vw);height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}
+    #bar > i{display:block;height:100%;width:0%;background:rgba(160, 255, 70, .9)}
+    #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:9999;
+      padding:10px 12px;border-radius:12px;background:rgba(20,26,38,.96);border:1px solid rgba(255,255,255,.12);
+      max-width:min(92vw,520px);display:none;}
+    #toast b{display:block;margin-bottom:4px}
+    #logBtn{position:fixed;right:10px;bottom:12px;z-index:9999;font-size:12px;padding:8px 10px;border-radius:999px;
+      background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff}
+    #logPanel{position:fixed;inset:auto 10px 56px 10px;max-height:48vh;overflow:auto;z-index:9999;display:none;
+      background:rgba(0,0,0,.86);border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:10px;font-size:12px;white-space:pre-wrap}
+    #stubModal{position:fixed;inset:0;display:none;z-index:99999;align-items:center;justify-content:center;background:rgba(0,0,0,.55);}
+    #stubModal .box{width:min(560px,92vw);border-radius:16px;background:#111522;border:1px solid rgba(255,255,255,.12);padding:16px}
+    #stubModal .box h3{margin:0 0 8px 0;font-size:16px}
+    #stubModal .box p{margin:0 0 10px 0;font-size:13px;opacity:.9;line-height:1.35}
+    #stubUrl{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);color:#e8edf7}
+    #stubModal .row{display:flex;gap:10px;justify-content:flex-end;margin-top:12px}
+    .btn{padding:10px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08);color:#fff}
+    .btn.primary{background:rgba(160,255,70,.22);border-color:rgba(160,255,70,.35)}
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div id="brand">BTLIDER</div>
+    <div id="chips">
+      <div class="chip" id="chipMode">guest</div>
+      <div class="chip">🔔 <strong id="chipBell">0</strong></div>
+      <div class="chip">balance: <strong id="chipBal">0</strong></div>
+    </div>
+  </div>
+  <div id="frameWrap">
+    <iframe id="appFrame" title="app"></iframe>
+    <div id="splash">
+      <h1>Завантаження…</h1>
+      <p>Split-версія для GitHub Pages. Якщо щось блокується — дивись LOG.</p>
+      <div id="bar"><i id="barFill"></i></div>
+    </div>
+  </div>
+</div>
+
+<button id="logBtn" type="button">LOG</button>
+<div id="logPanel"></div>
+
+<div id="toast"><b id="toastTitle"></b><div id="toastBody"></div></div>
+
+<div id="stubModal" role="dialog" aria-modal="true">
+  <div class="box">
+    <h3>Посилання тимчасово вимкнено</h3>
+    <p>Щоб лобі працювало офлайн і без переходів на сторонні сайти, зовнішні посилання замінено на «заглушки».</p>
+    <input id="stubUrl" readonly />
+    <div class="row">
+      <button class="btn" id="stubClose">Закрити</button>
+      <button class="btn primary" id="stubOk">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  const LS_AUTH = 'BTLIDER_AUTH';
+  const LS_PLAYER = 'BTLIDER_PLAYER_V1';
+  const KEY_GORILLA = 'gorilla_current';
+  const KEY_GORILLA_DEMO = 'GORILLA_DEMO_AUTH';
+
+  const frame = document.getElementById('appFrame');
+  const splash = document.getElementById('splash');
+  const barFill = document.getElementById('barFill');
+  const chipMode = document.getElementById('chipMode');
+  const chipBell = document.getElementById('chipBell');
+  const chipBal = document.getElementById('chipBal');
+  const logBtn = document.getElementById('logBtn');
+  const logPanel = document.getElementById('logPanel');
+
+  const stubModal = document.getElementById('stubModal');
+  const stubUrl = document.getElementById('stubUrl');
+  document.getElementById('stubClose').onclick = ()=>stubModal.style.display='none';
+  document.getElementById('stubOk').onclick = ()=>stubModal.style.display='none';
+
+  const toast = document.getElementById('toast');
+  const toastTitle = document.getElementById('toastTitle');
+  const toastBody = document.getElementById('toastBody');
+
+  function showToast(title, body){
+    toastTitle.textContent = title || 'Info';
+    toastBody.textContent = body || '';
+    toast.style.display = 'block';
+    setTimeout(()=>toast.style.display='none', 2800);
+  }
+
+  function log(msg){
+    const line = '['+new Date().toLocaleTimeString()+'] '+msg;
+    logPanel.textContent = (logPanel.textContent ? (logPanel.textContent+'\n') : '') + line;
+  }
+
+  logBtn.onclick = ()=>{
+    logPanel.style.display = (logPanel.style.display==='block') ? 'none' : 'block';
+  };
+
+  window.addEventListener('error', (e)=>{ try{ log('ERROR: '+(e.message||e.error)); showToast('JS error', String(e.message||e.error||'error')); }catch(_){} });
+  window.addEventListener('unhandledrejection', (e)=>{ try{ log('REJECT: '+(e.reason && (e.reason.message||e.reason)) ); showToast('Promise reject', String(e.reason && (e.reason.message||e.reason)||'reject')); }catch(_){} });
+
+  function safeJsonParse(s){ try{ return JSON.parse(s); } catch(e){ return null; } }
+
+  function getPlayer(){
+    const raw = localStorage.getItem(LS_PLAYER);
+    const p = raw ? safeJsonParse(raw) : null;
+    return p && typeof p==='object' ? p : { balance:0, notif:0, authed:false };
+  }
+  function setPlayer(p){ localStorage.setItem(LS_PLAYER, JSON.stringify(p||{})); }
+
+  function isAuthed(){
+    if(localStorage.getItem(LS_AUTH)==='1') return true;
+    const demo = localStorage.getItem(KEY_GORILLA_DEMO);
+    if(demo && demo!=='0' && demo!=='false') return true;
+    const gc = safeJsonParse(localStorage.getItem(KEY_GORILLA)||'');
+    if(gc && (gc.authed===true || gc.loggedIn===true)) return true;
+    if(gc && gc.kind && gc.value && gc.at) return true;
+    const p = getPlayer();
+    return !!p.authed;
+  }
+
+  function syncChips(){
+    const p = getPlayer();
+    const authed = isAuthed();
+    chipMode.textContent = authed ? 'authed' : 'guest';
+    chipBell.textContent = String(p.notif||0);
+    chipBal.textContent = String(p.balance||0);
+  }
+
+  function setAuthed(v){
+    localStorage.setItem(LS_AUTH, v ? '1' : '0');
+    const p = getPlayer();
+    p.authed = !!v;
+    setPlayer(p);
+    syncChips();
+  }
+
+  function showStub(url){
+    stubUrl.value = url || '';
+    stubModal.style.display = 'flex';
+  }
+
+  function home(){
+    loadView(isAuthed() ? 'authed.html' : 'guest.html');
+  }
+  function promo(){
+    if(!isAuthed()){ openAuth('register'); return; }
+    loadView('promo_bonus.html');
+    // ask inner to focus promo tab if it supports
+    setTimeout(()=>{ try{ frame.contentWindow && frame.contentWindow.postMessage({type:'BTLIDER_FOCUS', target:'promo'}, '*'); }catch(_){} }, 300);
+  }
+  function bonus(){
+    if(!isAuthed()){ openAuth('register'); return; }
+    loadView('promo_bonus.html');
+    setTimeout(()=>{ try{ frame.contentWindow && frame.contentWindow.postMessage({type:'BTLIDER_FOCUS', target:'bonus'}, '*'); }catch(_){} }, 300);
+  }
+
+  function openAuth(mode){
+    loadView('guest.html', ()=>{
+      try{
+        const w = frame.contentWindow;
+        if(!w) return;
+        // try common APIs first
+        if(typeof w.showScreen==='function'){
+          w.showScreen(mode==='register'?'register':'login');
+          return;
+        }
+        if(typeof w.openAuth==='function'){
+          w.openAuth(mode);
+          return;
+        }
+        // fallback click by text
+        const doc = w.document;
+        const want = (mode==='register') ? ['реєстрація','регистрация','signup','register'] : ['вхід','увійти','войти','login','signin'];
+        const btns = Array.from(doc.querySelectorAll('button,a,[role="button"]'));
+        const hit = btns.find(el=>{
+          const t = (el.textContent||'').trim().toLowerCase();
+          return want.some(k=>t===k || t.includes(k));
+        });
+        if(hit){ hit.click(); }
+      }catch(e){ log('openAuth err: '+e); }
+    });
+  }
+
+  let current = '';
+  function loadView(path, after){
+    if(current===path) { if(after) after(); return; }
+    current = path;
+    splash.style.display = 'flex';
+    barFill.style.width = '25%';
+    frame.src = path;
+    // after load hook
+    frame.onload = ()=>{
+      barFill.style.width = '85%';
+      syncChips();
+      installFrameBridge();
+      splash.style.display = 'none';
+      barFill.style.width = '100%';
+      setTimeout(()=>barFill.style.width='0%', 200);
+      if(after) after();
+    };
+    // failsafe
+    setTimeout(()=>{ if(splash.style.display==='flex'){ log('WARN: frame load slow: '+path); barFill.style.width='55%'; } }, 1800);
+    setTimeout(()=>{ if(splash.style.display==='flex'){ log('WARN: frame still loading: '+path); barFill.style.width='65%'; } }, 4200);
+  }
+
+  function installFrameBridge(){
+    try{
+      const w = frame.contentWindow; if(!w) return;
+      const d = w.document; if(!d) return;
+
+      // Capture router first (beats any existing handlers if href isn't external)
+      const CAPTURE = true;
+      const handler = function(ev){
+        const t = ev.target && ev.target.closest ? ev.target.closest('a,button,[role="button"]') : null;
+        if(!t) return;
+
+        const txt = ((t.textContent||'')+'').trim().toLowerCase();
+        const href = (t.tagName==='A' ? (t.getAttribute('href')||'') : '') || '';
+        const hrefL = href.toLowerCase();
+
+        const wantsPromo = (hrefL.includes('btlider_promo')) || txt==='промо' || txt.includes('промо');
+        const wantsBonus = txt==='бонуси' || txt.includes('бонус') || hrefL.includes('bonus');
+        const wantsHome = txt==='головна' || txt.includes('головн') || hrefL==='#home';
+
+        const isExternal = /^https?:\/\//i.test(href) || href.startsWith('//');
+
+        if(wantsPromo || (isExternal && /\/uk\/promo\b/i.test(hrefL))){
+          ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
+          parent.postMessage({type:'NAV_PROMO'}, '*');
+          return;
+        }
+        if(wantsBonus){
+          // only reroute bonus if it's clearly navigation
+          if(txt==='бонуси' || txt.includes('бонуси')){
+            ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
+            parent.postMessage({type:'NAV_BONUS'}, '*');
+            return;
+          }
+        }
+        if(wantsHome){
+          ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
+          parent.postMessage({type:'NAV_HOME'}, '*');
+          return;
+        }
+
+        // external link stub (but not promo)
+        if(isExternal){
+          ev.preventDefault(); ev.stopImmediatePropagation(); ev.stopPropagation();
+          parent.postMessage({type:'EXTERNAL', url: href}, '*');
+        }
+      };
+
+      // remove previous install by marking
+      if(!w.__BTLIDER_BRIDGE_INSTALLED){
+        d.addEventListener('click', handler, CAPTURE);
+        // also protect touch on mobile
+        d.addEventListener('pointerdown', handler, CAPTURE);
+        w.__BTLIDER_BRIDGE_INSTALLED = true;
+      }
+    }catch(e){ log('bridge install err: '+e); }
+  }
+
+  window.addEventListener('message', (ev)=>{
+    const data = ev.data || {};
+    if(!data || typeof data!=='object') return;
+    if(data.type==='NAV_PROMO') { promo(); return; }
+    if(data.type==='NAV_BONUS') { bonus(); return; }
+    if(data.type==='NAV_HOME') { home(); return; }
+    if(data.type==='EXTERNAL') { showStub(data.url||''); return; }
+    if(data.type==='AUTH_SET'){ setAuthed(!!data.authed); home(); return; }
+    if(data.type==='AUTH_LOGOUT'){ setAuthed(false); home(); return; }
+  });
+
+  // periodic sync from gorilla_current / demo auth
+  setInterval(()=>{
+    try{
+      const authed = isAuthed();
+      const p = getPlayer();
+      if(authed !== !!p.authed){
+        p.authed = authed;
+        setPlayer(p);
+      }
+      syncChips();
+    }catch(_){}
+  }, 900);
+
+  // start
+  syncChips();
+  home();
+})();
+</script>
+</body>
+</html>
