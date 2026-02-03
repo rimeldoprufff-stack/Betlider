@@ -9835,4 +9835,72 @@ window.addEventListener('message', function(ev){
 </script>
 <!-- /ASSISTANT PATCH -->
 
+
+<!-- ASSISTANT PATCH: supabase bridge + iframe error forward + build stamp -->
+<script>
+(function(){
+  'use strict';
+  function send(kind,msg,data){
+    try{ parent && parent.postMessage({type:'BTLIDER_LOG', payload:{kind:kind, msg:msg, data:data}}, '*'); }catch(_e){}
+  }
+  window.addEventListener('error', function(e){ send('IFR_ERROR', e.message||'error', {filename:e.filename, lineno:e.lineno, colno:e.colno}); });
+  window.addEventListener('unhandledrejection', function(e){ var r=e && e.reason; send('IFR_REJECT', (r && (r.message||r)) || 'reject'); });
+
+  function attach(){
+    try{
+      var btnR = document.getElementById('btnRegister');
+      var btnL = document.getElementById('btnLogin');
+      function getReg(){
+        var tabEmail = document.getElementById('regEmail');
+        var tabPhone = document.getElementById('regPhone');
+        var pass = document.getElementById('regPass');
+        return { email: tabEmail ? String(tabEmail.value||'').trim() : '', phone: tabPhone ? String(tabPhone.value||'').trim() : '', password: pass ? String(pass.value||'') : '' };
+      }
+      function getLogin(){
+        var e = document.getElementById('loginEmail');
+        var p = document.getElementById('loginPhone');
+        var pass = document.getElementById('loginPass');
+        return { email: e ? String(e.value||'').trim() : '', phone: p ? String(p.value||'').trim() : '', password: pass ? String(pass.value||'') : '' };
+      }
+      async function onRegister(ev){
+        try{ ev.preventDefault(); ev.stopImmediatePropagation(); }catch(_e){}
+        var data = getReg();
+        send('AUTH_CLICK','register', {email:data.email, hasPass:!!data.password});
+        try{
+          if(!parent || !parent.BTLIDER || !parent.BTLIDER.Auth || typeof parent.BTLIDER.Auth.register !== 'function'){
+            send('AUTH_ERR','bridge missing parent.BTLIDER.Auth.register');
+            alert('Auth bridge not ready. Reload page.');
+            return;
+          }
+          await parent.BTLIDER.Auth.register({ email: data.email, password: data.password });
+        }catch(err){
+          send('AUTH_ERR','register', (err && (err.message||String(err))) || 'error');
+          try{ alert((err && (err.message||String(err))) || 'Помилка реєстрації'); }catch(_a){}
+        }
+      }
+      async function onLogin(ev){
+        try{ ev.preventDefault(); ev.stopImmediatePropagation(); }catch(_e){}
+        var data = getLogin();
+        send('AUTH_CLICK','login', {email:data.email, hasPass:!!data.password});
+        try{
+          if(!parent || !parent.BTLIDER || !parent.BTLIDER.Auth || typeof parent.BTLIDER.Auth.login !== 'function'){
+            send('AUTH_ERR','bridge missing parent.BTLIDER.Auth.login');
+            alert('Auth bridge not ready. Reload page.');
+            return;
+          }
+          await parent.BTLIDER.Auth.login({ email: data.email, password: data.password });
+        }catch(err){
+          send('AUTH_ERR','login', (err && (err.message||String(err))) || 'error');
+          try{ alert((err && (err.message||String(err))) || 'Помилка входу'); }catch(_a){}
+        }
+      }
+      if(btnR) btnR.addEventListener('click', onRegister, true);
+      if(btnL) btnL.addEventListener('click', onLogin, true);
+      send('BRIDGE','online auth interceptors attached');
+    }catch(e){ send('BRIDGE_ERR', e.message||String(e)); }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', attach);
+  else attach();
+})();
+</script>
 </body></html>

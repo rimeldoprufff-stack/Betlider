@@ -67,35 +67,83 @@
 
   const pctEl = document.getElementById("pct");
 const logBtn = document.getElementById('logBtn');
-  const logPanel = document.getElementById('logPanel');
-  const logBody = document.getElementById('logBody');
+  const logPanelEl = document.getElementById('logPanel');
+  const logBody = document.getElementById('logBody') || logPanelEl;
   const logCopy = document.getElementById('logCopy');
   const logClear = document.getElementById('logClear');
   const logHide = document.getElementById('logHide');
 
-  function log(msg){
-    const line = '['+new Date().toLocaleTimeString()+'] '+msg;
-    logPanel.textContent = (logPanel.textContent ? (logPanel.textContent+'\n') : '') + line;
+  const __LOG_LINES = [];
+  function __fmt(kind, msg, data){
+    const ts = new Date().toLocaleTimeString();
+    let line = `[${ts}] ${String(kind||'LOG')}: ${String(msg||'')}`;
+    if(data !== undefined){
+      try{
+        const s = (typeof data === 'string') ? data : JSON.stringify(data);
+        if(s && s !== '{}' ) line += ` | ${s}`;
+      }catch(_){
+        line += ' | [data]';
+      }
+    }
+    return line;
   }
-  logBtn.onclick = ()=>{ logPanel.style.display = (logPanel.style.display==='none' || !logPanel.style.display) ? 'block' : 'none'; };
-  if(logHide) logHide.onclick = ()=>{ logPanel.style.display='none'; };
-  if(logClear) logClear.onclick = ()=>{ try{ __LOG_LINES.length=0; if(logBody) logBody.textContent=''; }catch(_){ } };
-  if(logCopy) logCopy.onclick = async ()=>{ try{ const t = (logBody?logBody.textContent:logPanel.textContent)||''; await navigator.clipboard.writeText(t); }catch(e){ try{ prompt('COPY LOG:', (logBody?logBody.textContent:logPanel.textContent)||''); }catch(_){} } };
+  function __render(){
+    try{ logBody.textContent = __LOG_LINES.join('\n'); }catch(_){}
+  }
+  window.__BTLIDER_LOG = function(kind, msg, data){
+    try{
+      __LOG_LINES.push(__fmt(kind, msg, data));
+      if(__LOG_LINES.length > 2000) __LOG_LINES.splice(0, __LOG_LINES.length-2000);
+      __render();
+    }catch(_){
+      try{ console.log(kind, msg, data); }catch(__){}
+    }
+  };
 
-  window.addEventListener('error', (e)=>{ try{ log('ERROR: '+(e.message||'error')); }catch(_){ } });
-  window.addEventListener('unhandledrejection', (e)=>{ try{ log('REJECT: '+(e.reason && (e.reason.message||e.reason) || 'reject')); 
+  if(logBtn) logBtn.onclick = ()=>{
+    const cur = logPanelEl.style.display;
+    logPanelEl.style.display = (cur==='none' || !cur) ? 'block' : 'none';
+  };
+  if(logHide) logHide.onclick = ()=>{ logPanelEl.style.display='none'; };
+  if(logClear) logClear.onclick = ()=>{ __LOG_LINES.length = 0; __render(); };
+  if(logCopy) logCopy.onclick = async ()=>{
+    const t = (__LOG_LINES.join('\n')) || '';
+    try{ await navigator.clipboard.writeText(t); }
+    catch(e){ try{ prompt('COPY LOG:', t); }catch(_2){} }
+  };
+
+  window.addEventListener('error', (e)=>{
+    try{ window.__BTLIDER_LOG('ERROR', (e.message||'error'), {filename:e.filename, lineno:e.lineno, colno:e.colno}); }catch(_){}
+  });
+  window.addEventListener('unhandledrejection', (e)=>{
+    try{
+      const r = e && e.reason;
+      window.__BTLIDER_LOG('REJECT', (r && (r.message||r)) || 'reject');
+    }catch(_){}
+  });
+
+  // Forward logs from iframe
   window.addEventListener('message', (ev)=>{
     try{
       const d = ev && ev.data;
       if(!d || typeof d!=='object') return;
       if(d.type==='BTLIDER_LOG'){
-        log(d.payload && d.payload.kind || 'FRAME', d.payload && d.payload.msg || '', d.payload && d.payload.data);
+        const p = d.payload || {};
+        window.__BTLIDER_LOG(p.kind || 'FRAME', p.msg || '', p.data);
       }
-    }catch(_){ }
+    }catch(_){}
   });
-}catch(_){ } });
 
-  function safeJson(s){ try{ return JSON.parse(s); }catch(_){ return null; } }
+  // Build stamp
+  window.__BTLIDER_BUILD = "BTLIDER v15 build 2026-02-03 22:19:46 UTC";
+  window.__BTLIDER_LOG('BUILD', window.__BTLIDER_BUILD);
+
+  // Cleanup legacy offline auth keys (do not use them)
+  try{
+    const legacyKeys = ['gorilla_current','gorilla_users','BTLIDER_AUTH','BTLIDER_AUTHED','BTLIDER_DEMO_USER'];
+    legacyKeys.forEach(k=>{ if(localStorage.getItem(k)!==null){ localStorage.removeItem(k); window.__BTLIDER_LOG('CLEAN', 'removed '+k); }});
+  }catch(_){}
+function safeJson(s){ try{ return JSON.parse(s); }catch(_){ return null; } }
 
   function getPlayer(){
     const raw = localStorage.getItem(LS_PLAYER);
