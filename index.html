@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>BTLIDER</title>
+  <style>
+    html,body{height:100%;margin:0;background:#05070b;color:#e8eefc;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    #app{position:fixed;inset:0;display:flex;flex-direction:column}
+#frameWrap{position:relative;flex:1 1 auto;min-height:0}
+    #appFrame{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent}
+    #splash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;
+      background:radial-gradient(1200px 800px at 50% 30%, rgba(44,56,86,.45), rgba(10,12,18,.94));
+      z-index:50}
+    #splash h1{margin:0;font-size:16px}
+    #splash p{margin:0;font-size:12px;opacity:.75;text-align:center;max-width:280px}
+    #bar{width:240px;height:6px;border-radius:99px;background:rgba(255,255,255,.10);overflow:hidden}
+    #barFill{width:0%;height:100%;background:rgba(199,255,0,.85)}
+    #logBtn{position:fixed;right:10px;bottom:10px;z-index:60;padding:8px 10px;border-radius:12px;
+      background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.12);color:#fff}
+    #logPanel{position:fixed;left:10px;top:10px;bottom:10px;width:340px;max-height:none;overflow:auto;z-index:80;
+      padding:10px 12px;border-radius:14px;background:rgba(0,0,0,.75);border:1px solid rgba(255,255,255,.12);
+      white-space:pre-wrap;font-size:12px;display:block}
+#logHead{position:sticky;top:0;display:flex;gap:8px;justify-content:flex-end;background:rgba(0,0,0,.75);padding-bottom:8px;margin-bottom:8px}
+#logHead button{font-size:11px;border-radius:10px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;padding:6px 10px}
+#logBody{margin:0;white-space:pre-wrap;word-break:break-word}
+
+  
+/* ASSISTANT PATCH: RESTORE ORIGINAL VISUALS (hide shell UI, don't override donor backgrounds) */
+#topbar{display:none !important;}
+#app{background:transparent !important;}
+#appFrame{background:transparent !important;}
+#splash{background:rgba(0,0,0,.65) !important;}
+
+
+    html,body{background:#05070b !important;}
+</style>
+
+  <!-- ASSISTANT PATCH: Supabase client (UMD) -->
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.42.1/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div id="frameWrap">
+      <iframe id="appFrame" title="BTLIDER"></iframe>
+      <div id="splash">
+        <h1>Завантаження <span id="pct">0%</span></h1>
+        <div id="err" style="font-size:12px;opacity:.85;display:none"></div>
+        <div id="bar"><div id="barFill"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <button id="logBtn" type="button">LOG</button>
+  <div id="logPanel"><div id="logHead"><button id="logCopy" type="button">COPY</button><button id="logClear" type="button">CLEAR</button><button id="logHide" type="button">HIDE</button></div><pre id="logBody"></pre></div>
+
+<script>
+(function(){
+  'use strict';
+  const KEY_GORILLA = 'gorilla_current';
+  const KEY_USERS = 'gorilla_users';
+  const LS_PLAYER = 'BTLIDER_PLAYER_V1';
+
+  const frame = document.getElementById('appFrame');
+  const splash = document.getElementById('splash');
+  const barFill = document.getElementById('barFill');
+
+  const pctEl = document.getElementById("pct");
+const logBtn = document.getElementById('logBtn');
+  const logPanelEl = document.getElementById('logPanel');
+  const logBody = document.getElementById('logBody') || logPanelEl;
+  const logCopy = document.getElementById('logCopy');
+  const logClear = document.getElementById('logClear');
+  const logHide = document.getElementById('logHide');
+
+  const __LOG_LINES = [];
+  function __fmt(kind, msg, data){
+    const ts = new Date().toLocaleTimeString();
+    let line = `[${ts}] ${String(kind||'LOG')}: ${String(msg||'')}`;
+    if(data !== undefined){
+      try{
+        const s = (typeof data === 'string') ? data : JSON.stringify(data);
+        if(s && s !== '{}' ) line += ` | ${s}`;
+      }catch(_){
+        line += ' | [data]';
+      }
+    }
+    return line;
+  }
+  function __render(){
+    try{ logBody.textContent = __LOG_LINES.join('\n'); }catch(_){}
+  }
+  window.__BTLIDER_LOG = function(kind, msg, data){
+    try{
+      __LOG_LINES.push(__fmt(kind, msg, data));
+      if(__LOG_LINES.length > 2000) __LOG_LINES.splice(0, __LOG_LINES.length-2000);
+      __render();
+    }catch(_){
+      try{ console.log(kind, msg, data); }catch(__){}
+    }
+  };
+
+  // ASSISTANT PATCH v18: alias for legacy log() calls
+  function log(msg, data){
+    try{ window.__BTLIDER_LOG && window.__BTLIDER_LOG('INFO', String(msg||''), data); }catch(_){ }
+  }
+
+
+  if(logBtn) logBtn.onclick = ()=>{
+    const cur = logPanelEl.style.display;
+    logPanelEl.style.display = (cur==='none' || !cur) ? 'block' : 'none';
+  };
+  if(logHide) logHide.onclick = ()=>{ logPanelEl.style.display='none'; };
+  if(logClear) logClear.onclick = ()=>{ __LOG_LINES.length = 0; __render(); };
+  if(logCopy) logCopy.onclick = async ()=>{
+    const t = (__LOG_LINES.join('\n')) || '';
+    try{ await navigator.clipboard.writeText(t); }
+    catch(e){ try{ prompt('COPY LOG:', t); }catch(_2){} }
+  };
+
+  window.addEventListener('error', (e)=>{
+    try{ window.__BTLIDER_LOG('ERROR', (e.message||'error'), {filename:e.filename, lineno:e.lineno, colno:e.colno}); }catch(_){}
+  });
+  window.addEventListener('unhandledrejection', (e)=>{
+    try{
+      const r = e && e.reason;
+      window.__BTLIDER_LOG('REJECT', (r && (r.message||r)) || 'reject');
+    }catch(_){}
+  });
+
+  // Forward logs from iframe
+  window.addEventListener('message', (ev)=>{
+    try{
+      const d = ev && ev.data;
+      if(!d || typeof d!=='object') return;
+      if(d.type==='BTLIDER_LOG'){
+        const p = d.payload || {};
+        window.__BTLIDER_LOG(p.kind || 'FRAME', p.msg || '', p.data);
+      }
+    }catch(_){}
+  });
+
+  // Build stamp
+  window.__BTLIDER_BUILD = "BTLIDER v18 build 2026-02-03 22:19:46 UTC";
+  window.__BTLIDER_LOG('BUILD', window.__BTLIDER_BUILD);
+
+  // Cleanup legacy offline auth keys (do not use them)
+  try{
+    const legacyKeys = ['gorilla_current','gorilla_users','BTLIDER_AUTH','BTLIDER_AUTHED','BTLIDER_DEMO_USER'];
+    legacyKeys.forEach(k=>{ if(localStorage.getItem(k)!==null){ localStorage.removeItem(k); window.__BTLIDER_LOG('CLEAN', 'removed '+k); }});
+  }catch(_){}
+function safeJson(s){ try{ return JSON.parse(s); }catch(_){ return null; } }
+
+  function getPlayer(){
+    const raw = localStorage.getItem(LS_PLAYER);
+    const p = raw ? safeJson(raw) : null;
+    return p && typeof p==='object' ? p : { balance:0, notif:0, authed:false };
+  }
+  function setPlayer(p){ localStorage.setItem(LS_PLAYER, JSON.stringify(p||{})); }
+
+  function getGorilla(){
+    const raw = localStorage.getItem(KEY_GORILLA);
+    return raw ? safeJson(raw) : null;
+  }
+
+  function isAuthed(){
+    return !!window.__BTLIDER_AUTHED;
+  }
+
+  function refreshChips(){
+    const a = isAuthed();
+    const p = getPlayer();
+    // keep balance/notif, but sync auth flag
+    if(!!p.authed !== a){ p.authed = a; setPlayer(p); }
+}
+
+  function showSplash(on){
+    splash.style.display = on ? 'flex' : 'none';
+  }
+  function setProgress(v){
+    barFill.style.width = Math.max(0, Math.min(100, v)) + '%';
+  }
+
+  // router
+  let currentRoute = null;
+  function routeTo(name, opts){
+    opts = opts || {};
+    if(currentRoute===name && !opts.force) return;
+    currentRoute = name;
+    showSplash(true);
+    setProgress(10);
+    const src = name + '.html';
+    frame.src = src;
+    log('route -> '+src);
+  }
+
+  function autoRoute(){
+    routeTo(isAuthed() ? 'authed' : 'guest', {force:true});
+  }
+
+  // storage sync: iframe changes LS => parent updates
+    // ASSISTANT PATCH v18: ignore offline localStorage auth; only refresh UI on storage
+  window.addEventListener('storage', (e)=>{ try{ refreshChips(); }catch(_){ } });
+}
+    }
+  });
+
+  // fallback poll (Android webview can be flaky)
+  let lastG = localStorage.getItem(KEY_GORILLA);
+  setInterval(()=>{
+    try{
+      const nowG = localStorage.getItem(KEY_GORILLA);
+      if(nowG!==lastG){
+        lastG = nowG;
+        refreshChips();
+        routeTo(isAuthed() ? 'authed' : 'guest', {force:true});
+      } else {
+        refreshChips();
+      }
+    }catch(_){}
+  }, 700);
+
+  // interceptors installed per route
+  function installInFrame(win, doc){
+    if(!win || !doc) return;
+    // clear old
+    try{ win.__BTLIDER_INSTALLED = (win.__BTLIDER_INSTALLED||0)+1; }catch(_){}
+    const route = currentRoute;
+
+    // helpers
+    function post(type, payload){
+      try{ window.postMessage({type, payload}, '*'); }catch(_){}
+    
+    // ASSISTANT PATCH: frame instrumentation (network/auth UI/logs)
+    try{
+      // Wrap fetch inside iframe to log Supabase traffic
+      if(!win.__BTLIDER_FETCH_WRAPPED && typeof win.fetch === 'function'){
+        const __SB = String(window.__BTLIDER_SB_URL || 'supabase.co');
+        const _fetch = win.fetch.bind(win);
+        win.fetch = async function(input, init){
+          const t0 = (win.performance && win.performance.now) ? win.performance.now() : Date.now();
+          let url = '';
+          try{ url = (typeof input==='string') ? input : (input && input.url) || ''; }catch(_){}
+          const method = (init && init.method) || (input && input.method) || 'GET';
+          let body = null;
+          try{ body = init && init.body ? init.body : null; }catch(_){}
+          const isSB = url && (url.indexOf(__SB)>=0 || url.indexOf('supabase.co')>=0);
+          if(isSB){
+            try{ window.__BTLIDER_LOG && window.__BTLIDER_LOG('NET_REQ', method+' '+url, body); }catch(_){}
+          }
+          try{
+            const res = await _fetch(input, init);
+            if(isSB){
+              const dt = ((win.performance && win.performance.now)? win.performance.now() : Date.now()) - t0;
+              try{ window.__BTLIDER_LOG && window.__BTLIDER_LOG('NET_RES', res.status+' '+method+' '+url+' ('+Math.round(dt)+'ms)'); }catch(_){}
+            }
+            return res;
+          }catch(err){
+            if(isSB){
+              try{ window.__BTLIDER_LOG && window.__BTLIDER_LOG('NET_ERR', method+' '+url, (err && err.message) ? err.message : String(err)); }catch(_){}
+            }
+            throw err;
+          }
+        };
+        win.__BTLIDER_FETCH_WRAPPED = true;
+      }
+
+      // Forward console errors from iframe
+      if(!win.__BTLIDER_CONSOLE_WRAPPED && win.console){
+        const _ce = win.console.error ? win.console.error.bind(win.console) : null;
+        win.console.error = function(){
+          try{ window.__BTLIDER_LOG && window.__BTLIDER_LOG('FRAME_ERR', 'console.error', Array.from(arguments)); }catch(_){}
+          if(_ce) return _ce.apply(null, arguments);
+        };
+        win.__BTLIDER_CONSOLE_WRAPPED = true;
+      }
+
+      // UI: hide login/register on authed, hide profile/logout on guest (best-effort)
+      const applyAuthUI = ()=>{
+        const authed = !!window.__BTLIDER_AUTHED;
+        const els = doc.querySelectorAll('a,button,[role="button"]');
+        els.forEach(el=>{
+          const txt = (el.textContent||'').trim().toLowerCase();
+          if(!txt) return;
+          const isLoginReg = (txt==='реєстрація' || txt==='регистрация' || txt==='увійти' || txt==='вхід' || txt==='войти' || txt==='login' || txt==='register' || txt==='signup');
+          const isLogoutProfile = (txt==='вихід' || txt==='logout' || txt==='профіль' || txt==='profile' || txt==='баланс');
+          if(authed && isLoginReg){ el.style.display = 'none'; }
+          else if(!authed && isLogoutProfile){ el.style.display = 'none'; }
+        });
+      };
+      applyAuthUI();
+      if(!win.__BTLIDER_UI_OBS){
+        const mo = new MutationObserver(()=>applyAuthUI());
+        mo.observe(doc.documentElement || doc.body, {subtree:true, childList:true, attributes:true});
+        win.__BTLIDER_UI_OBS = mo;
+      }
+    }catch(_){}
+}
+
+    // 1) route click: promo/bonus/home/login/register
+    doc.addEventListener('click', function(ev){
+      const t = ev.target;
+      if(!t || !(t instanceof Element)) return;
+      const a = t.closest('a,button');
+      if(!a) return;
+      const txt = (a.textContent||'').trim().toLowerCase();
+      const href = (a.getAttribute('href')||'').trim();
+
+      const wantPromo = txt==='промо' || txt.includes('промо') || /\/promo\b/i.test(href) || /\/promo\b/i.test(a.id||'') || /promo/i.test(a.className||'');
+      const wantBonus = txt.includes('бонус') || /bonus|bonuses/i.test(href) || /bonus/i.test(a.id||'') || /bonus/i.test(a.className||'');
+      const wantHome  = txt==='головна' || /\bhome\b/i.test(href) || /\/uk\/?$/.test(href);
+      const wantLogin = txt==='увійти' || txt==='вхід' || /login|signin/i.test(href) || /login|signin/i.test(a.id||'') || /login|signin/i.test(a.className||'');
+      const wantReg   = txt==='реєстрація' || txt==='регистрация' || /register|signup/i.test(href) || /register|signup/i.test(a.id||'') || /register|signup/i.test(a.className||'');
+
+      if(wantPromo || wantBonus){
+        ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+        parent.postMessage({type:'NAVIGATE', payload:{to:'promo_bonus'}}, '*');
+        return;
+      }
+      if(wantHome){
+        ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+        parent.postMessage({type:'NAVIGATE', payload:{to:'home'}}, '*');
+        return;
+      }
+      if(wantLogin || wantReg){
+        ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+        parent.postMessage({type:'OPEN_AUTH', payload:{mode: wantReg ? 'register' : 'login'}}, '*');
+        return;
+      }
+      // block true external navigations (keep on-page anchors)
+      if(href && /^(https?:)?\/\//i.test(href)){
+        ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+        parent.postMessage({type:'EXTERNAL_BLOCKED', payload:{url: href}}, '*');
+        return;
+      }
+    }, true);
+
+    // 2) allow parent to ask guest page to open login/register
+    if(route==='guest'){
+      win.addEventListener('message', function(e){
+        const d = e && e.data;
+        if(!d || !d.type) return;
+        if(d.type==='OPEN_AUTH_INNER'){
+          const mode = (d.payload && d.payload.mode) || 'login';
+          try{
+            if(typeof win.showScreen==='function') win.showScreen(mode);
+            else if(typeof win.openAuth==='function') win.openAuth(mode);
+            else {
+              // fallback: click buttons by text
+              const btns = Array.from(doc.querySelectorAll('button,a'));
+              const needle = mode==='register' ? ['реєстрація','регистрация','create'] : ['увійти','вхід','войти','login'];
+              const b = btns.find(x => needle.some(n => (x.textContent||'').trim().toLowerCase()===n));
+              b && b.click();
+            }
+          }catch(_){}
+        }
+      });
+    }
+
+    // 3) promo_bonus: if authed, hide login/register CTA
+    if(route==='promo_bonus'){
+      const hideIfAuthed = ()=>{
+        try{
+          const authed = parent && parent.localStorage ? false : false;
+        }catch(_){}
+        // parent can't be accessed; use localStorage shared origin
+        const authed = (function(){
+          try{
+            const raw = localStorage.getItem(KEY_GORILLA);
+            const g = raw ? JSON.parse(raw) : null;
+            return !!(g && g.kind && g.value && g.at);
+          }catch(_){ return false; }
+        })();
+        if(!authed) return;
+        const nodes = Array.from(doc.querySelectorAll('a,button'));
+        nodes.forEach(el=>{
+          const tx=(el.textContent||'').trim().toLowerCase();
+          if(tx==='увійти' || tx==='вхід' || tx==='реєстрація' || tx==='регистрация' || tx.includes('створити акаунт')){
+            el.style.display='none';
+            el.setAttribute('aria-hidden','true');
+          }
+        });
+      };
+      hideIfAuthed();
+      const mo = new MutationObserver(()=>hideIfAuthed());
+      try{ mo.observe(doc.documentElement, {subtree:true, childList:true}); }catch(_){}
+    }
+  }
+
+  frame.addEventListener('load', ()=>{
+    setProgress(85);
+    // detect 404/blank
+    try{
+      const d = frame.contentDocument;
+      const title = (d && d.title || '').toLowerCase();
+      const txt = (d && d.body && (d.body.innerText||d.body.textContent)||'').trim().toLowerCase();
+      const looks404 = title.includes('404') || txt.includes('404') || txt.includes('not found') || txt.includes('page not found');
+      if(looks404){
+        const err = document.getElementById('err');
+        if(err){ err.style.display='block'; err.textContent = 'Не знайдено: ' + (currentRoute? (currentRoute+'.html') : 'файл'); }
+        // keep splash visible
+        setProgress(0);
+        return;
+      }
+    }catch(_){}
+
+    showSplash(false);
+    // install interceptors
+    try{
+      const w = frame.contentWindow;
+      const d = frame.contentDocument;
+      if(d){ installInFrame(w, d); }
+    }catch(e){ log('installInFrame error: '+(e&&e.message||e)); }
+    refreshChips();
+});
+
+  window.addEventListener('message', (e)=>{
+    const d = e && e.data;
+    if(!d || !d.type) return;
+    if(d.type==='NAVIGATE'){
+      const to = d.payload && d.payload.to;
+      if(to==='promo_bonus'){ routeTo('promo_bonus'); return; }
+      if(to==='home'){ routeTo(isAuthed() ? 'authed' : 'guest', {force:true}); return; }
+    }
+    if(d.type==='OPEN_AUTH'){
+      const mode = (d.payload && d.payload.mode) || 'login';
+      // go to guest and then ask it to open modal
+      routeTo('guest', {force:true});
+      const t0 = Date.now();
+      const tick = setInterval(()=>{
+        try{
+          if(frame.contentWindow && frame.contentDocument){
+            frame.contentWindow.postMessage({type:'OPEN_AUTH_INNER', payload:{mode}}, '*');
+            clearInterval(tick);
+          }
+        }catch(_){}
+        if(Date.now()-t0>3500) clearInterval(tick);
+      }, 120);
+    }
+    if(d.type==='EXTERNAL_BLOCKED'){
+      const url = (d.payload && d.payload.url) || '';
+      log('blocked external: '+url);
+    }
+  });
+
+  // boot
+  refreshChips();
+  setProgress(5);
+  autoRoute();
+  setProgress(30);
+
+})();
+</script>
+
+<!-- ASSISTANT PATCH: home routing everywhere (guest/authed) -->
+<script>
+(function(){
+  function safeJsonParse(x){ try{ return JSON.parse(x); }catch(e){ return null; } }
+  function isAuthed(){
+    return !!window.__BTLIDER_AUTHED;
+  }
+
+  window.__BTLIDER_IS_AUTHED = isAuthed;
+
+  function goHome(){
+    try{
+      const authed = isAuthed();
+      if(typeof window.loadMain === 'function'){
+        window.loadMain(authed ? 'authed' : 'guest');
+        return;
+      }
+      const frame = document.getElementById('appFrame') || document.querySelector('iframe');
+      if(frame){
+        frame.src = authed ? 'authed.html' : 'guest.html';
+        return;
+      }
+      location.href = 'index.html';
+    }catch(e){
+      location.href = 'index.html';
+    }
+  }
+  window.__BTLIDER_GO_HOME = goHome;
+
+  window.addEventListener('message', function(ev){
+    const d = ev && ev.data;
+    if(!d) return;
+    const t = (typeof d === 'string') ? d : d.type;
+    if(t === 'NAV_HOME' || t === 'ASSISTANT_HOME' || t === 'HOME'){
+      goHome();
+    }
+  });
+
+})();
+</script>
+
+
+<script>
+/* ASSISTANT PATCH: Supabase bridge v2 (strict online, no offline auth, full logging) */
+(function(){
+  const SB_URL = 'https://vshzqiqppgitnhuqmcgn.supabase.co';
+  const SB_KEY = 'sb_publishable_DJSaoIKQQPU_5rio3xt8ZQ_8H_6Xs4X';
+  window.__BTLIDER_SB_URL = SB_URL;
+
+  const BASE = new URL('.', location.href).href; // ends with /
+
+  let sb = null;
+  function getSB(){
+    if(sb) return sb;
+    if(!window.supabase || !window.supabase.createClient){
+      window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH','Supabase lib not ready yet');
+      return null;
+    }
+    sb = window.supabase.createClient(SB_URL, SB_KEY, {
+      auth: { detectSessionInUrl: true, persistSession: true, autoRefreshToken: true }
+    });
+    return sb;
+  }
+
+  function toast(msg){
+    try{
+      window.__BTLIDER_LOG && window.__BTLIDER_LOG('TOAST', String(msg||''));
+      const f = document.getElementById('appFrame');
+      const w = f && f.contentWindow;
+      if(w) w.postMessage({type:'BTLIDER_TOAST', payload:{msg:String(msg||'')}}, '*');
+    }catch(_){}
+  }
+
+  function setAuthed(session, user, source){
+    window.__BTLIDER_AUTHED = !!session;
+    window.__BTLIDER_AUTH = { session: session ? { expires_at: session.expires_at } : null, user: user ? { id:user.id, email:user.email } : null, source: source||'' };
+    try{ window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH', (window.__BTLIDER_AUTHED?'session=YES':'session=NO') + (user&&user.email?(' '+user.email):''), {source}); }catch(_){}
+      // ASSISTANT PATCH v18: broadcast auth changes to iframe
+    try{
+      const fr = document.getElementById('appFrame');
+      const w = fr && fr.contentWindow;
+      if(w) w.postMessage({type:'BTLIDER_AUTH_CHANGED', payload:{authed:!!window.__BTLIDER_AUTHED}}, '*');
+    }catch(_){ }
+  }
+
+
+  async function syncSession(reason){
+    const s = getSB(); if(!s) return;
+    try{
+      const { data, error } = await s.auth.getSession();
+      if(error) throw error;
+      const session = data && data.session;
+      let user = null;
+      if(session){
+        try{
+          const u = await s.auth.getUser();
+          user = u && u.data && u.data.user ? u.data.user : (session.user||null);
+        }catch(_){ user = session.user||null; }
+      }
+      setAuthed(session, user, reason||'getSession');
+    }catch(err){
+      setAuthed(null, null, 'error');
+      toast('Auth error: ' + (err && err.message ? err.message : String(err)));
+      try{ window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH_ERR','syncSession failed', err && (err.message||err)); }catch(_){}
+    }
+  }
+
+  function routeNow(){
+    try{
+      const authed = !!window.__BTLIDER_AUTHED;
+      if(typeof window.routeTo === 'function'){
+        window.routeTo(authed ? 'authed' : 'guest', {force:true});
+        return;
+      }
+      const frame = document.getElementById('appFrame');
+      if(frame){
+        frame.src = authed ? 'authed.html' : 'guest.html';
+      }
+    }catch(_){}
+  }
+
+  let hooked = false;
+  function hook(){
+    const s = getSB(); if(!s || hooked) return;
+    hooked = true;
+    s.auth.onAuthStateChange((event, session)=>{
+      try{
+        window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH_EVT', event, session ? { user: session.user && {id:session.user.id,email:session.user.email}, expires_at: session.expires_at } : null);
+      }catch(_){}
+      setAuthed(session||null, (session&&session.user)||null, event);
+      routeNow();
+    });
+  }
+
+  window.BTLIDER = window.BTLIDER || {};
+  window.BTLIDER.Auth = {
+    async register(email, password){
+      const s = getSB(); if(!s) throw new Error('Supabase not loaded');
+      const e = String(email||'').trim();
+      const p = String(password||'');
+      window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH_CALL','signUp', {email:e, emailRedirectTo: BASE+'authed.html'});
+      const { data, error } = await s.auth.signUp({ email: e, password: p, options: { emailRedirectTo: BASE + 'authed.html' }});
+      if(error){
+        window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH_ERR','signUp', error.message||error);
+        throw error;
+      }
+      if(data && data.session){
+        setAuthed(data.session, (data.session.user||data.user||null), 'signUp');
+        routeNow();
+      }else{
+        setAuthed(null, null, 'signUp_no_session');
+        toast('Реєстрація створена. Підтверди e-mail у листі, потім увійди.');
+        routeNow();
+      }
+      return data;
+    },
+    async login(email, password){
+      const s = getSB(); if(!s) throw new Error('Supabase not loaded');
+      const e = String(email||'').trim();
+      const p = String(password||'');
+      window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH_CALL','signInWithPassword', {email:e});
+      const { data, error } = await s.auth.signInWithPassword({ email: e, password: p });
+      if(error){
+        window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH_ERR','signInWithPassword', error.message||error);
+        throw error;
+      }
+      setAuthed(data && data.session || null, data && (data.user || (data.session && data.session.user)) || null, 'signIn');
+      routeNow();
+      return data;
+    },
+    async logout(){
+      const s = getSB(); if(!s) throw new Error('Supabase not loaded');
+      window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH_CALL','signOut');
+      const { error } = await s.auth.signOut();
+      if(error){
+        window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH_ERR','signOut', error.message||error);
+        throw error;
+      }
+      setAuthed(null, null, 'signOut');
+      routeNow();
+      return true;
+    },
+    async session(){
+      const s = getSB(); if(!s) return null;
+      const { data } = await s.auth.getSession();
+      return data && data.session || null;
+    }
+  };
+
+  (async ()=>{
+    const t0 = Date.now();
+    while(!(window.supabase && window.supabase.createClient) && Date.now()-t0 < 4000){
+      await new Promise(r=>setTimeout(r,50));
+    }
+    hook();
+    await syncSession('boot');
+    routeNow();
+  })();
+
+})();
+
+</script>
+
+</body>
+</html>
