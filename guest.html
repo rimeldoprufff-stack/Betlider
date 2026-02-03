@@ -9959,4 +9959,30 @@ window.addEventListener('message', function(ev){
 })();
 </script>
 
+
+<!-- ASSISTANT PATCH: AUTH GUARD (Supabase session in parent) -->
+<script>
+(function(){
+  try{
+    if(window.top===window) return; // only when embedded in index shell
+    const check = async ()=>{
+      try{
+        const p = parent;
+        const hasBridge = !!(p && p.BTLIDER && p.BTLIDER.Auth && typeof p.BTLIDER.Auth.session==='function');
+        let ok = !!(p && p.__BTLIDER_AUTHED);
+        if(hasBridge){
+          const s = await p.BTLIDER.Auth.session().catch(()=>null);
+          ok = !!s;
+        }
+        if(ok){
+          try{ p && p.__BTLIDER_LOG && p.__BTLIDER_LOG('AUTH_GUARD','guest.html: session present -> redirect'); }catch(_){}
+          location.replace('authed.html');
+        }
+      }catch(_e){}
+    };
+    setTimeout(check, 80);
+  }catch(_){}
+})();
+</script>
+
 </body></html>

@@ -175,7 +175,9 @@ function safeJson(s){ try{ return JSON.parse(s); }catch(_){ return null; } }
     splash.style.display = on ? 'flex' : 'none';
   }
   function setProgress(v){
-    barFill.style.width = Math.max(0, Math.min(100, v)) + '%';
+    const vv = Math.max(0, Math.min(100, v));
+    barFill.style.width = vv + '%';
+    try{ pctEl.textContent = Math.round(vv) + '%'; }catch(_){ }
   }
 
   // router
@@ -200,23 +202,10 @@ function safeJson(s){ try{ return JSON.parse(s); }catch(_){ return null; } }
     try{ refreshChips(); }catch(_){ }
     try{ routeTo(isAuthed() ? 'authed' : 'guest', {force:true}); }catch(_){ }
   });
-      }
-    }
-  });
 
   // fallback poll (Android webview can be flaky)
-  let lastG = localStorage.getItem(KEY_GORILLA);
   setInterval(()=>{
-    try{
-      const nowG = localStorage.getItem(KEY_GORILLA);
-      if(nowG!==lastG){
-        lastG = nowG;
-        refreshChips();
-        routeTo(isAuthed() ? 'authed' : 'guest', {force:true});
-      } else {
-        refreshChips();
-      }
-    }catch(_){}
+    try{ refreshChips(); }catch(_){}
   }, 700);
 
   // interceptors installed per route
@@ -527,8 +516,6 @@ function safeJson(s){ try{ return JSON.parse(s); }catch(_){ return null; } }
   function setAuthed(session, user, source){
     window.__BTLIDER_AUTHED = !!session;
     window.__BTLIDER_AUTH = { session: session ? { expires_at: session.expires_at } : null, user: user ? { id:user.id, email:user.email } : null, source: source||'' };
-    try{ window.dispatchEvent(new CustomEvent(\'BTLIDER_AUTH_CHANGED\', {detail: window.__BTLIDER_AUTH})); }catch(_){ }
-
     try{ window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH', (window.__BTLIDER_AUTHED?'session=YES':'session=NO') + (user&&user.email?(' '+user.email):''), {source}); }catch(_){}
   }
 
