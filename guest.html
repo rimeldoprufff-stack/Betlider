@@ -9903,4 +9903,60 @@ window.addEventListener('message', function(ev){
   else attach();
 })();
 </script>
+
+<!-- ASSISTANT PATCH: force online Supabase auth + forward logs -->
+<script>
+(function(){
+  try{
+    // Cleanup any legacy offline auth keys (online-only)
+    try{ localStorage.removeItem('gorilla_current'); localStorage.removeItem('gorilla_users'); }catch(_){}
+    // Bridge logger to parent
+    function pLog(kind,msg,data){ try{ parent && parent.__BTLIDER_LOG && parent.__BTLIDER_LOG(kind,msg,data); }catch(_){ } }
+    window.addEventListener('error', function(ev){
+      try{ pLog('IFRAME_ERR', (ev && ev.message) ? ev.message : 'error', {filename: ev.filename, lineno: ev.lineno, colno: ev.colno}); }catch(_){}
+    });
+    window.addEventListener('unhandledrejection', function(ev){
+      try{ pLog('IFRAME_REJ', 'unhandledrejection', {reason: (ev && ev.reason) ? String(ev.reason) : ''}); }catch(_){}
+    });
+
+    function hookAuthButtons(){
+      var btnR = document.getElementById('btnRegister') || document.querySelector('[data-action="register"], .btn-register');
+      var btnL = document.getElementById('btnLogin') || document.querySelector('[data-action="login"], .btn-login');
+      function getEmail(){ var e=document.querySelector('input[type="email"], #regEmail, #loginEmail'); return e?e.value.trim():''; }
+      function getPass(){ var p=document.querySelector('input[type="password"], #regPass, #loginPass'); return p?p.value:''; }
+      if(btnR){
+        btnR.addEventListener('click', function(ev){
+          try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){}
+          pLog('AUTH_CLICK','register',{email:getEmail()});
+          try{
+            if(parent && parent.BTLIDER && parent.BTLIDER.Auth && typeof parent.BTLIDER.Auth.register==='function'){
+              parent.BTLIDER.Auth.register(getEmail(), getPass());
+            }else{
+              pLog('AUTH_ERR','parent.BTLIDER.Auth.register missing');
+              alert('Auth not ready. Open via index.html');
+            }
+          }catch(e){ pLog('AUTH_ERR','register threw',{e:String(e)}); }
+        }, true);
+      }
+      if(btnL){
+        btnL.addEventListener('click', function(ev){
+          try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){}
+          pLog('AUTH_CLICK','login',{email:getEmail()});
+          try{
+            if(parent && parent.BTLIDER && parent.BTLIDER.Auth && typeof parent.BTLIDER.Auth.login==='function'){
+              parent.BTLIDER.Auth.login(getEmail(), getPass());
+            }else{
+              pLog('AUTH_ERR','parent.BTLIDER.Auth.login missing');
+              alert('Auth not ready. Open via index.html');
+            }
+          }catch(e){ pLog('AUTH_ERR','login threw',{e:String(e)}); }
+        }, true);
+      }
+    }
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', hookAuthButtons);
+    else hookAuthButtons();
+  }catch(_){}
+})();
+</script>
+
 </body></html>

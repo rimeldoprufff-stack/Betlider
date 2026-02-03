@@ -100,6 +100,9 @@ const logBtn = document.getElementById('logBtn');
     }
   };
 
+  // ASSISTANT PATCH: log alias for legacy calls
+  function log(msg, data){ try{ window.__BTLIDER_LOG('INFO', String(msg||''), data); }catch(_){ try{ console.log(msg, data); }catch(__){} } }
+
   if(logBtn) logBtn.onclick = ()=>{
     const cur = logPanelEl.style.display;
     logPanelEl.style.display = (cur==='none' || !cur) ? 'block' : 'none';
@@ -192,13 +195,11 @@ function safeJson(s){ try{ return JSON.parse(s); }catch(_){ return null; } }
     routeTo(isAuthed() ? 'authed' : 'guest', {force:true});
   }
 
-  // storage sync: iframe changes LS => parent updates
-  window.addEventListener('storage', (e)=>{
-    if(e && (e.key===KEY_GORILLA || e.key===LS_PLAYER || e.key===KEY_USERS)){
-      refreshChips();
-      if(e.key===KEY_GORILLA){
-        // on auth change, return to proper home
-        routeTo(isAuthed() ? 'authed' : 'guest', {force:true});
+  // ASSISTANT PATCH: auth sync via Supabase session only
+  window.addEventListener('BTLIDER_AUTH_CHANGED', ()=>{
+    try{ refreshChips(); }catch(_){ }
+    try{ routeTo(isAuthed() ? 'authed' : 'guest', {force:true}); }catch(_){ }
+  });
       }
     }
   });
@@ -526,6 +527,8 @@ function safeJson(s){ try{ return JSON.parse(s); }catch(_){ return null; } }
   function setAuthed(session, user, source){
     window.__BTLIDER_AUTHED = !!session;
     window.__BTLIDER_AUTH = { session: session ? { expires_at: session.expires_at } : null, user: user ? { id:user.id, email:user.email } : null, source: source||'' };
+    try{ window.dispatchEvent(new CustomEvent(\'BTLIDER_AUTH_CHANGED\', {detail: window.__BTLIDER_AUTH})); }catch(_){ }
+
     try{ window.__BTLIDER_LOG && window.__BTLIDER_LOG('AUTH', (window.__BTLIDER_AUTHED?'session=YES':'session=NO') + (user&&user.email?(' '+user.email):''), {source}); }catch(_){}
   }
 
