@@ -1,6 +1,19 @@
 <!doctype html>
 <html lang="uk">
 <head>
+<!-- ASSISTANT PATCH: early addLine stub v23.14 -->
+<script>
+(function(){
+  window.__BTLIDER_LINES = window.__BTLIDER_LINES || [];
+  window.addLine = window.addLine || function(tag,msg,obj){
+    try{
+      window.__BTLIDER_LINES.push([Date.now(), tag, msg, obj]);
+      if(window.__BTLIDER_LINES.length>600) window.__BTLIDER_LINES.shift();
+    }catch(e){}
+  };
+})();
+</script>
+
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>BTLIDER</title>
@@ -576,7 +589,9 @@ async register(email, password) {
     setTimeout(() => {
       if(!loaded) {
         window.__BTLIDER_LOG && window.__BTLIDER_LOG('warn','WARN: iframe load timeout', {ms: Date.now()-t0, src: frame.src});
-        // Keep splash but allow user to click LOG and see errors
+        // Do NOT block the app on slow/blocked external resources: hide splash and continue.
+        try{ setProgress(100); }catch(_e){}
+        try{ splash && (splash.style.display='none'); }catch(_e){}
       }
     }, 8000);
   })();
@@ -647,6 +662,125 @@ if(d.type === 'OPEN_PROMO'){
       </div>
     </div>
   </div>
+
+<!-- ASSISTANT PATCH: universal diag + loader failsafe v23.14 -->
+<script>
+(function(){
+  'use strict';
+  function ts(){
+    try{
+      const d=new Date();
+      return d.toTimeString().slice(0,8);
+    }catch(e){ return ''; }
+  }
+  function safeJson(o){
+    try{ return JSON.stringify(o); }catch(e){ return String(o); }
+  }
+  function pushLine(tag,msg,obj){
+    window.__BTLIDER_LINES = window.__BTLIDER_LINES || [];
+    window.__BTLIDER_LINES.push([Date.now(), tag, msg, obj]);
+    if(window.__BTLIDER_LINES.length>800) window.__BTLIDER_LINES.shift();
+  }
+  // Hard guarantee
+  window.addLine = window.addLine || function(tag,msg,obj){ pushLine(tag,msg,obj); };
+
+  // Capture errors for everyone (temporary)
+  window.addEventListener('error', function(e){
+    pushLine('ERROR', (e && e.message) ? e.message : 'error', {filename:e && e.filename, lineno:e && e.lineno, colno:e && e.colno});
+  });
+  window.addEventListener('unhandledrejection', function(e){
+    var r = e && e.reason;
+    pushLine('REJECT', (r && (r.message||r.toString())) || 'unhandledrejection', {reason: (r && (r.stack||r.message)) || String(r)});
+  });
+
+  function mount(){
+    if(document.getElementById('btlDiagPanel')) return;
+    var wrap=document.createElement('div');
+    wrap.id='btlDiagPanel';
+    wrap.style.cssText='position:fixed;left:8px;bottom:68px;width:min(360px,92vw);max-height:42vh;z-index:2147483647;background:rgba(0,0,0,.72);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.18);border-radius:14px;overflow:hidden;font:12px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Arial;color:#fff;';
+    var head=document.createElement('div');
+    head.style.cssText='display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.12);';
+    head.innerHTML='<div style="font-weight:700;letter-spacing:.2px;">BTLIDER LOG</div><div style="opacity:.75;flex:1;">(тимчасово для всіх)</div>';
+    var btnCopy=document.createElement('button');
+    btnCopy.textContent='COPY';
+    btnCopy.style.cssText='background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:6px 10px;font-weight:700;';
+    var btnHide=document.createElement('button');
+    btnHide.textContent='HIDE';
+    btnHide.style.cssText=btnCopy.style.cssText;
+    btnHide.onclick=function(){ wrap.style.display='none'; };
+    btnCopy.onclick=function(){
+      try{
+        var lines=(window.__BTLIDER_LINES||[]).slice(-250).map(function(x){
+          var t = ts();
+          try{ t = new Date(x[0]).toTimeString().slice(0,8); }catch(e){}
+          var tag=x[1], msg=x[2], obj=x[3];
+          return '['+t+'] '+tag+': '+msg+(obj!==undefined ? ' | '+safeJson(obj) : '');
+        }).join('
+');
+        navigator.clipboard.writeText(lines).then(function(){
+          pushLine('COPIED','OK');
+        }).catch(function(){
+          pushLine('COPIED','FAILED');
+        });
+      }catch(e){ pushLine('COPIED','EX', String(e && e.message || e)); }
+    };
+    head.appendChild(btnCopy);
+    head.appendChild(btnHide);
+
+    var body=document.createElement('div');
+    body.id='btlDiagBody';
+    body.style.cssText='padding:8px 10px;overflow:auto;max-height:34vh;white-space:pre-wrap;word-break:break-word;';
+    wrap.appendChild(head);
+    wrap.appendChild(body);
+    document.body.appendChild(wrap);
+
+    function render(){
+      var arr=(window.__BTLIDER_LINES||[]).slice(-200);
+      body.textContent=arr.map(function(x){
+        var t=ts(); try{ t=new Date(x[0]).toTimeString().slice(0,8);}catch(e){}
+        return '['+t+'] '+x[1]+': '+x[2]+(x[3]!==undefined ? ' | '+safeJson(x[3]) : '');
+      }).join('
+');
+      body.scrollTop = body.scrollHeight;
+    }
+    render();
+    setInterval(render, 700);
+  }
+
+  function loaderFailsafe(){
+    try{
+      // remove common full-screen blockers
+      var kill = [
+        '#preloader','#loader','#loading','#loadingOverlay','.preloader','.loader','.loading-overlay','.loadingOverlay','[data-btl-loader]','[data-loader]'
+      ];
+      kill.forEach(function(sel){
+        document.querySelectorAll(sel).forEach(function(el){
+          try{ el.style.display='none'; }catch(e){}
+        });
+      });
+      if(document.documentElement) document.documentElement.classList.remove('loading');
+      if(document.body) document.body.classList.remove('loading');
+      pushLine('DIAG','loader failsafe executed');
+      try{ setProgress(100); }catch(_e){}
+      try{ splash && (splash.style.display='none'); }catch(_e){}
+    }catch(e){
+      pushLine('DIAG','loader failsafe error', String(e && e.message || e));
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    mount();
+    // If anything still blocks after 7s, kill it
+    setTimeout(loaderFailsafe, 7000);
+  });
+
+  // If DOM already loaded
+  if(document.readyState === 'interactive' || document.readyState === 'complete'){
+    setTimeout(function(){ try{ mount(); }catch(e){} }, 0);
+    setTimeout(loaderFailsafe, 7000);
+  }
+})();
+</script>
 
 </body>
 </html>
