@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Профіль</title>
+<style>
+  html,body{height:100%;margin:0;background:#06080d;color:#e9f0ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  .wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px}
+  .card{width:min(520px,100%);border-radius:18px;background:linear-gradient(180deg,rgba(20,32,60,.92),rgba(10,12,18,.92));
+        border:1px solid rgba(140,180,255,.18);box-shadow:0 12px 40px rgba(0,0,0,.55), 0 0 0 1px rgba(90,160,255,.12) inset;
+        overflow:hidden}
+  .hdr{display:flex;gap:12px;align-items:center;padding:14px 16px;background:linear-gradient(90deg,rgba(40,120,255,.18),rgba(0,255,170,.08))}
+  .avatar{width:42px;height:42px;border-radius:14px;display:grid;place-items:center;
+          background:radial-gradient(circle at 30% 30%, rgba(0,255,170,.35), rgba(40,120,255,.18) 55%, rgba(0,0,0,0) 75%),
+                     rgba(255,255,255,.06);
+          border:1px solid rgba(255,255,255,.14);font-weight:800;letter-spacing:.5px}
+  .title{font-size:15px;font-weight:800;margin:0}
+  .sub{opacity:.75;font-size:12px;margin:2px 0 0}
+  .body{padding:14px 16px;display:grid;gap:10px}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:10px 12px;border-radius:14px;
+       background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08)}
+  .k{opacity:.75;font-size:12px}
+  .v{font-weight:800;font-size:13px;word-break:break-all;text-align:right}
+  .actions{display:flex;gap:10px;padding:14px 16px;border-top:1px solid rgba(255,255,255,.08);background:rgba(0,0,0,.18)}
+  .btn{flex:1;border:0;border-radius:14px;padding:12px 12px;font-weight:800;color:#061018;cursor:pointer}
+  .btn.primary{background:linear-gradient(90deg,#4ef,#3f6bff); }
+  .btn.ghost{background:rgba(255,255,255,.08);color:#e9f0ff;border:1px solid rgba(255,255,255,.12)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="hdr">
+      <div class="avatar" id="avatar">BT</div>
+      <div>
+        <p class="title" id="email">Профіль</p>
+        <p class="sub" id="uid">—</p>
+      </div>
+    </div>
+    <div class="body">
+      <div class="row"><div class="k">Баланс</div><div class="v" id="balance">—</div></div>
+      <div class="row"><div class="k">Валюта</div><div class="v" id="currency">UAH</div></div>
+      <div class="row"><div class="k">Статус</div><div class="v" id="status">—</div></div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="backBtn" type="button">Назад</button>
+      <button class="btn primary" id="logoutBtn" type="button">Вийти</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  function send(type,payload){
+    try{ window.parent && window.parent.postMessage(Object.assign({__btlider:true,type:type}, payload||{}), '*'); }catch(e){}
+  }
+  function log(msg,obj){ try{ window.parent && window.parent.__BTLIDER_LOG && window.parent.__BTLIDER_LOG(msg,obj||null);}catch(e){} }
+
+  function setText(id, val){ var el=document.getElementById(id); if(el) el.textContent=val; }
+  function initials(email){
+    if(!email) return 'BT';
+    var p=email.split('@')[0].replace(/[^a-z0-9]/ig,'');
+    return (p.slice(0,2)||'BT').toUpperCase();
+  }
+
+  function render(st){
+    if(!st){ setText('status','NO_PARENT'); return; }
+    if(st.user){
+      setText('email', st.user.email || 'Профіль');
+      setText('uid', st.user.id || '—');
+      var av=document.getElementById('avatar'); if(av) av.textContent=initials(st.user.email);
+    }else{
+      setText('email','Гість');
+      setText('uid','—');
+    }
+    var bal = (st.balance==null)?'—':(Math.round(Number(st.balance)*100)/100).toFixed(2);
+    setText('balance', bal + ' ' + (st.currency||'UAH'));
+    setText('currency', String(st.currency||'UAH'));
+    setText('status', st.authed ? 'AUTHED' : 'GUEST');
+  }
+
+  // initial render
+  try{
+    var st = window.parent && window.parent.BTLIDER && window.parent.BTLIDER.getState ? window.parent.BTLIDER.getState() : null;
+    render(st);
+  }catch(e){ setText('status','ERR'); }
+
+  // listen updates
+  window.addEventListener('message', function(ev){
+    var d = ev && ev.data;
+    if(!d || !d.__btlider) return;
+    if(d.type==='BTLIDER_AUTH_CHANGED'){
+      try{
+        render({authed:!!d.authed, user:d.user||null, balance:d.balance, currency:d.currency||'UAH'});
+      }catch(e){}
+    }
+    if(d.type==='BTLIDER_BALANCE'){
+      try{
+        var cur = String(d.currency||'UAH');
+        var bal = (d.balance==null)?'—':(Math.round(Number(d.balance)*100)/100).toFixed(2);
+        setText('balance', bal + ' ' + cur);
+        setText('currency', cur);
+      }catch(e){}
+    }
+  });
+
+  document.getElementById('backBtn').addEventListener('click', function(){ send('NAV_HOME'); });
+  document.getElementById('logoutBtn').addEventListener('click', function(){
+    try{
+      var api = window.parent && window.parent.BTLIDER && window.parent.BTLIDER.Auth;
+      api && api.logout && api.logout();
+    }catch(e){}
+  });
+
+  send('NEED_BALANCE');
+})();
+</script>
+
+<!-- ASSISTANT PATCH v23.3: balance sync listener (profile.html) -->
+<script>
+(() => {
+  function fmt(b,c) {
+    const n = Number(b||0);
+    return n.toFixed(2).replace(/\.00$/,'') + (c?(' '+c):'');
+  }
+  function apply(balance,currency){
+    try{
+      const text = fmt(balance,currency);
+      const nodes = [];
+      document.querySelectorAll('[data-btl-balance], #balance, .balance, .js-balance, [class*="balance"], [id*="balance"]').forEach(el=>nodes.push(el));
+      // de-dup
+      const seen = new Set();
+      nodes.forEach(el=>{
+        if(!el || seen.has(el)) return; seen.add(el);
+        // Avoid overwriting inputs
+        if(el.tagName==='INPUT' || el.tagName==='TEXTAREA') return;
+        // If element has children and looks like container, try find a numeric span inside
+        let target = el;
+        const inner = el.querySelector && el.querySelector('.amount,.value,.num,.balance-value,span');
+        if(inner && inner.textContent && /\d/.test(inner.textContent)) target = inner;
+        target.textContent = text;
+      });
+    }catch(e){}
+  }
+  window.addEventListener('message', (ev) => {
+    const d = ev.data;
+    if(!d || !d.__btlider) return;
+    if(d.type==='BTLIDER_BALANCE') {
+      apply(d.balance, d.currency);
+    }
+    if(d.type==='BTLIDER_AUTH_CHANGED') {
+      // nothing here; index controls routing
+    }
+  });
+  // ask parent for latest balance when embedded
+  try{
+    if(window.parent && window.parent !== window) {
+      window.parent.postMessage({__btlider:true, type:'NEED_BALANCE'}, '*');
+    }
+  }catch(e){}
+})();
+</script>
+
+
+<!-- ASSISTANT PATCH v23.4: intercept external links / map gorilla routes to our app -->
+<script>
+(function(){
+  function send(type, extra){
+    try{ parent && parent.postMessage(Object.assign({__btlider:true,type:type}, extra||{}), '*'); }catch(e){}
+  }
+  function isExt(href){
+    if(!href) return false;
+    return /gorilla\.ua|betlider\.ua/i.test(href);
+  }
+  function classify(href, text){
+    href = href || '';
+    const t = (text||'').trim().toLowerCase();
+    if(/my-account/i.test(href) || /мій акаунт|мой аккаунт|account|проф(і|и)л/i.test(t)) return 'PROFILE';
+    if(/promo|bonus|quest|promocode/i.test(href) || /промо|бонус|квест|промокод/i.test(t)) return 'PROMO';
+    return 'STUB';
+  }
+  document.addEventListener('click', function(e){
+    const a = e.target && (e.target.closest ? e.target.closest('a') : null);
+    if(!a) return;
+    const href = a.getAttribute('href') || '';
+    if(href.startsWith('#BTLIDER_PROMO')){ e.preventDefault(); e.stopPropagation(); send('OPEN_PROMO'); return; }
+    if(href.startsWith('#BTLIDER_PROFILE')){ e.preventDefault(); e.stopPropagation(); send('OPEN_PROFILE'); return; }
+    if(isExt(href)){
+      const kind = classify(href, a.textContent||'');
+      e.preventDefault(); e.stopPropagation();
+      if(kind==='PROFILE'){ send('OPEN_PROFILE'); return; }
+      if(kind==='PROMO'){ send('OPEN_PROMO'); return; }
+      send('OPEN_STUB', {href:href, label:(a.textContent||'').trim().slice(0,80)});
+      try{ parent.__BTLIDER_LOG && parent.__BTLIDER_LOG('warn','NAV_BLOCKED (external)', {href:href}); }catch(_e){}
+    }
+  }, true);
+})();
+</script>
+
+
+<!-- ASSISTANT PATCH v23.6: BALANCE + NAV hooks (keep visual, no gorilla nav) -->
+<script>
+(function(){
+  if(window.__BTLIDER_BAL_NAV_HOOKS) return; window.__BTLIDER_BAL_NAV_HOOKS=true;
+  function post(type, extra){ try{ parent && parent.postMessage(Object.assign({__btlider:true,type:type}, extra||{}), '*'); }catch(e){} }
+  function applyBalance(bal, cur){
+    try{
+      var val = (bal===null||bal===undefined) ? '--' : String(bal);
+      var curTxt = cur || 'UAH';
+      var txt = val + ' ' + curTxt;
+      var sel = [
+        '[data-btl-balance]',
+        '#balance','#userBalance','#walletBalance',
+        '[id*="balance" i]','[class*="balance" i]',
+        '[id*="wallet" i]','[class*="wallet" i]',
+        '[class*="money" i]','[class*="amount" i]','[class*="sum" i]','[class*="cash" i]'
+      ].join(',');
+      var nodes = Array.prototype.slice.call(document.querySelectorAll(sel));
+      nodes.forEach(function(n){
+        if(!n) return;
+        // do not overwrite large blocks
+        var t = (n.textContent||'').trim();
+        if(t.length>0 && t.length<60){
+          n.textContent = txt;
+        }else if(n.hasAttribute('data-btl-balance')){
+          n.textContent = txt;
+        }
+      });
+      // mirror for legacy offline widgets (display only)
+      try{
+        localStorage.setItem('BTLIDER_BALANCE', String(bal));
+        localStorage.setItem('balance', String(bal));
+        localStorage.setItem('user_balance', String(bal));
+        localStorage.setItem('currency', String(curTxt));
+      }catch(e){}
+    }catch(e){}
+  }
+  // ask parent for balance once
+  try{ post('NEED_BALANCE'); }catch(e){}
+  window.addEventListener('message', function(ev){
+    var d = ev && ev.data;
+    if(!d || !d.__btlider) return;
+    if(d.type==='BTLIDER_BALANCE'){
+      applyBalance(d.balance, d.currency);
+    }
+  });
+  // nav hooks
+  function norm(s){ return (s||'').toString().trim().toLowerCase(); }
+  document.addEventListener('click', function(e){
+    try{
+      var t = e.target;
+      if(!t) return;
+      var a = t.closest ? t.closest('a,button,[role="button"]') : null;
+      if(!a) return;
+      var href = (a.getAttribute && (a.getAttribute('href')||a.getAttribute('data-href')||'')) || '';
+      var txt = norm(a.textContent||'');
+      var idc = norm((a.id||'')+' '+(a.className||'')+' '+(a.getAttribute && (a.getAttribute('aria-label')||'')));
+      var isProfile = href.indexOf('/my-account')>-1 || href.indexOf('my-account')>-1 || idc.indexOf('account')>-1 || idc.indexOf('profile')>-1 || txt==='профіль' || txt==='профиль';
+      var isPromo = href.indexOf('promo')>-1 || href.indexOf('bonus')>-1 || href.indexOf('quest')>-1 || href.indexOf('#btlider_promo')>-1 || idc.indexOf('promo')>-1 || idc.indexOf('bonus')>-1 || txt.indexOf('промо')>-1 || txt.indexOf('бонус')>-1;
+      if(isProfile){
+        e.preventDefault(); e.stopPropagation();
+        post('OPEN_PROFILE');
+        return;
+      }
+      if(isPromo){
+        e.preventDefault(); e.stopPropagation();
+        post('OPEN_PROMO');
+        return;
+      }
+      // block external gorilla links
+      if(href && (href.indexOf('gorilla.ua')>-1 || href.indexOf('betlider.ua')>-1)){
+        e.preventDefault(); e.stopPropagation();
+        post('OPEN_STUB',{label:'Скоро'});
+        return;
+      }
+    }catch(_){}
+  }, true);
+})();
+</script>
+<!-- /ASSISTANT PATCH v23.6 -->
+
+</body>
+</html>
