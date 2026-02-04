@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"/>
+<title>BTLIDER • Guest</title>
+<style>
+  :root{--bg:#05070a;--card:#0f1620;--text:#e8f0ff;--muted:#8aa0b8;--accent:#2dd4bf;--danger:#fb7185;}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+  .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;}
+  .card{width:min(520px,100%);background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:18px;box-sizing:border-box;}
+  h1{margin:0 0 8px 0;font-size:18px;}
+  p{margin:0 0 14px 0;color:var(--muted);font-size:13px;line-height:1.35;}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px;}
+  input{width:100%;box-sizing:border-box;padding:12px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:#070b10;color:var(--text);outline:none;}
+  .row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
+  button{flex:1;min-width:140px;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:var(--text);font-weight:700;}
+  button.primary{background:linear-gradient(90deg,var(--accent),#60a5fa);color:#042028;border:0;}
+  .msg{margin-top:12px;font-size:12px;color:var(--muted);white-space:pre-wrap;}
+  .err{color:var(--danger);}
+  .ok{color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Вхід / Реєстрація</h1>
+    <p>Це ваша власна форма. Ніяких “Gorilla” скриптів тут не підвантажується. Авторизація йде тільки через Supabase.</p>
+
+    <label>Email</label>
+    <input id="email" type="email" autocomplete="email" placeholder="you@example.com"/>
+
+    <label>Пароль</label>
+    <input id="pass" type="password" autocomplete="current-password" placeholder="••••••••"/>
+
+    <div class="row">
+      <button id="btnLogin" class="primary">Вхід</button>
+      <button id="btnRegister">Реєстрація</button>
+    </div>
+
+    <div class="msg" id="msg"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const msg = document.getElementById('msg');
+  function log(tag, text, obj){
+    try{ parent.__BTLIDER_LOG && parent.__BTLIDER_LOG(tag, text, obj); }catch(_e){}
+  }
+  function setMsg(t, cls){
+    msg.className = 'msg' + (cls ? (' ' + cls) : '');
+    msg.textContent = t || '';
+  }
+
+  try{
+    if(parent && parent.__BTLIDER_AUTHED) {
+      log('GUARD','already authed -> home');
+      parent.postMessage({type:'HOME'}, '*');
+      return;
+    }
+  }catch(_e){}
+
+  async function doLogin(){
+    const email = (document.getElementById('email').value||'').trim();
+    const password = document.getElementById('pass').value||'';
+    setMsg('Вхід…');
+    log('UI','login click', {email});
+    try{
+      await parent.BTLIDER.Auth.login(email, password);
+      setMsg('OK: увійшли', 'ok');
+      parent.postMessage({type:'HOME'}, '*');
+    }catch(e){
+      const m = (e && e.message) ? e.message : String(e||'error');
+      setMsg('ERROR: ' + m, 'err');
+      log('AUTH_ERR','login failed', {message:m});
+    }
+  }
+
+  async function doRegister(){
+    const email = (document.getElementById('email').value||'').trim();
+    const password = document.getElementById('pass').value||'';
+    setMsg('Реєстрація…');
+    log('UI','register click', {email});
+    try{
+      await parent.BTLIDER.Auth.register(email, password);
+      setMsg('OK: акаунт створено і ви увійшли', 'ok');
+      parent.postMessage({type:'HOME'}, '*');
+    }catch(e){
+      const m = (e && e.message) ? e.message : String(e||'error');
+      setMsg('ERROR: ' + m, 'err');
+      log('AUTH_ERR','register failed', {message:m});
+    }
+  }
+
+  document.getElementById('btnLogin').addEventListener('click', (e)=>{ e.preventDefault(); doLogin(); });
+  document.getElementById('btnRegister').addEventListener('click', (e)=>{ e.preventDefault(); doRegister(); });
+
+  // Promo hook: if any promo-related element is clicked in this page (or preserved layouts), open our promo_bonus.html
+  document.addEventListener('click', (e)=>{
+    const t = e.target;
+    if(!(t instanceof HTMLElement)) return;
+    const el = t.closest('a,button,[role="button"],*[data-testid],*[class],*[id]');
+    if(!el) return;
+    const href = (el instanceof HTMLAnchorElement) ? (el.getAttribute('href')||'') : '';
+    const idc = ((el.getAttribute('id')||'') + ' ' + (el.getAttribute('class')||'')).toLowerCase();
+    const txt = ((el.textContent||'').trim().toLowerCase()).slice(0,120);
+    const looksPromo = /\bpromo|promotions|bonus|bonuses|quest|quests\b/i.test(href)
+      || /\bpromo|promotions|bonus|bonuses|quest|quests\b/i.test(idc)
+      || txt === 'промо' || txt === 'промокод' || txt === 'бонуси' || txt === 'бонус' || txt === 'квести' || txt === 'квест';
+    if(!looksPromo) return;
+    e.preventDefault();
+    e.stopPropagation();
+    log('NAV','promo click -> promo_bonus.html', {href, txt});
+    try{ parent.postMessage({type:'OPEN_PROMO'}, '*'); }catch(_e){}
+  }, true);
+
+  window.addEventListener('error', (e)=>{ log('IFRAME_ERR', e && e.message ? e.message : 'error', {filename:e.filename, lineno:e.lineno, colno:e.colno}); });
+  window.addEventListener('unhandledrejection', (e)=>{ const r=e&&e.reason; log('IFRAME_REJ', (r&&r.message)?r.message:String(r||'rej')); });
+
+  log('READY','guest page ready');
+})();
+</script>
+
+<!-- ASSISTANT PATCH: v28 guest bridge (keep design, no external nav) -->
+<script>
+(() => {
+  const log = (m,o)=>{ try{ parent.__BTLIDER_LOG?.(m,o); }catch(e){} };
+  log('guest page ready');
+  // Block external navigation
+  document.addEventListener('click', (e)=>{
+    const a = e.target?.closest?.('a');
+    if(a && a.href && /^https?:/i.test(a.href) && !a.href.includes(location.host)) {
+      e.preventDefault(); e.stopPropagation();
+      log('NAV_BLOCKED', {href:a.href});
+    }
+  }, true);
+
+  function findEmail(){
+    return document.querySelector('input[type="email"], input[name*="mail" i], input[placeholder*="mail" i]') ||
+           document.querySelector('input');
+  }
+  function findPass(){
+    return document.querySelector('input[type="password"], input[name*="pass" i], input[placeholder*="парол" i], input[placeholder*="pass" i]');
+  }
+  function getCreds(){
+    const em = findEmail();
+    const pw = findPass();
+    return { email:(em?.value||'').trim(), password:(pw?.value||'') };
+  }
+  function hookButton(kind){
+    const texts = kind==='register'
+      ? ['зареєструватися','реєстрація','signup','register']
+      : ['увійти','вхід','login','sign in'];
+    const btn = Array.from(document.querySelectorAll('button, a, div[role="button"]')).find(el=>{
+      const t=(el.textContent||'').trim().toLowerCase();
+      return texts.some(x=>t===x || t.includes(x));
+    });
+    if(!btn) return;
+    btn.addEventListener('click', async (e)=>{
+      e.preventDefault(); e.stopPropagation();
+      const {email,password} = getCreds();
+      log(kind+' click', {email});
+      try {
+        if(!email || !password) throw new Error('Заповни email і пароль');
+        if(kind==='register') await parent.BTLIDER.Auth.register(email,password);
+        else await parent.BTLIDER.Auth.login(email,password);
+      } catch(err) {
+        log('AUTH_UI_ERR', {msg: err?.message||String(err)});
+        try { alert(err?.message||'Щось пішло не так'); } catch(e){}
+      }
+    }, true);
+    log('BRIDGE: '+kind+' hooked');
+  }
+  hookButton('register');
+  hookButton('login');
+
+  // Promo/profile hooks
+  document.addEventListener('click', (e)=>{
+    const el = e.target?.closest?.('a,button,div[role="button"]');
+    if(!el) return;
+    const txt = (el.textContent||'').trim().toLowerCase();
+    if(/промо|бонус|квест|promo|bonus|quest|промокод/i.test(txt)) {
+      e.preventDefault(); e.stopPropagation();
+      log('NAV promo click');
+      parent.postMessage({type:'OPEN_PROMO'}, '*');
+    }
+    if(/профіль|profile|account|кабінет/i.test(txt)) {
+      e.preventDefault(); e.stopPropagation();
+      parent.postMessage({type:'OPEN_PROFILE'}, '*');
+    }
+  }, true);
+
+  // Sync badge from parent
+  window.addEventListener('message', (ev)=>{
+    if(ev.data?.type==='BTLIDER_AUTH_CHANGED') {
+      const p=ev.data.payload;
+      if(p?.wallet) {
+        // optional: update local balance placeholders inside guest
+        const t = document.querySelector('[data-btl-balance]');
+        if(t) t.textContent = `${p.wallet.balance} ${p.wallet.currency||'UAH'}`;
+      }
+    }
+  });
+})();
+</script>
+</body>
+</html>
