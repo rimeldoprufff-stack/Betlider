@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>BTLIDER</title>
+  <style>
+    html,body{height:100%;margin:0;background:#05070b;color:#e8eefc;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    #app{position:fixed;inset:0;display:flex;flex-direction:column}
+    #frameWrap{position:relative;flex:1 1 auto;min-height:0}
+    #appFrame{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent}
+    #splash{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;
+      background:radial-gradient(1200px 800px at 50% 30%, rgba(44,56,86,.45), rgba(10,12,18,.94));
+      z-index:50}
+    #progressBar{width:min(520px,86vw);height:10px;border-radius:999px;background:rgba(255,255,255,.12);overflow:hidden}
+    #progressBar > i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#6ea8ff,#9b7bff,#ff6ea8);transition:width .25s ease}
+    #progressText{opacity:.85;font-size:14px}
+    #logPanel{position:fixed;left:0;top:0;bottom:0;width:min(360px,92vw);max-width:92vw;background:rgba(6,8,12,.92);
+      border-right:1px solid rgba(255,255,255,.08);backdrop-filter: blur(10px);z-index:80;display:flex;flex-direction:column}
+    #logHdr{display:flex;gap:8px;align-items:center;padding:10px;border-bottom:1px solid rgba(255,255,255,.08)}
+    #logHdr strong{font-size:13px;opacity:.9}
+    .lb{margin-left:auto;display:flex;gap:6px}
+    .btn{font-size:12px;padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#e8eefc}
+    .btn:active{transform:scale(.98)}
+    #logBody{padding:10px;overflow:auto;white-space:pre-wrap;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size:12px;line-height:1.35}
+    #logBody .err{color:#ff8f8f}
+    #logBody .warn{color:#ffd28f}
+    #logBody .ok{color:#9bffb5}
+    #logHint{padding:8px 10px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;opacity:.75}
+    #logPanel.is-hidden{display:none}
+    #logToggle{position:fixed;left:10px;bottom:10px;z-index:90}
+  
+  /* ASSISTANT PATCH v23.8: hide debug panels for non-admin */
+  body:not(.btl-admin) #logPanel{display:none !important;}
+  body.btl-admin #logPanel{display:flex !important;}
+</style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div id="app">
+    <div id="frameWrap">
+      <iframe id="appFrame" title="BTLIDER App" src="about:blank"></iframe>
+      <div id="splash" aria-live="polite">
+        <div style="font-weight:700;letter-spacing:.3px">BTLIDER</div>
+        <div id="progressBar"><i id="progressFill"></i></div>
+        <div id="progressText">Завантаження 0%</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="logPanel">
+    <div id="logHdr">
+      <strong>LOG</strong>
+      <div class="lb">
+        <button class="btn" id="copyLogBtn">COPY</button>
+        <button class="btn" id="clearLogBtn">CLEAR</button>
+        <button class="btn" id="hideLogBtn">HIDE</button>
+      </div>
+    </div>
+    <div id="logBody"></div>
+    <div id="logHint">CTRL: COPY/CLEAR/HIDE • Якщо зависло — скинь COPY сюди.</div>
+  </div>
+  <button class="btn" id="logToggle">LOG</button>
+
+  <!-- ASSISTANT PATCH v23.3: Admin button + modal (UI only; safe ops on self wallet) -->
+  <button class="btn" id="adminBtn" style="display:none;position:fixed;top:10px;left:10px;z-index:10020">ADMIN</button>
+  <div id="adminModal" style="display:none;position:fixed;inset:0;z-index:10030">
+    <div id="adminBackdrop" style="position:absolute;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(10px)"></div>
+    <div id="adminCard" style="position:relative;max-width:560px;margin:70px auto 0 auto;background:linear-gradient(180deg,#0a1020,#070a12);border:1px solid rgba(120,220,255,.25);box-shadow:0 20px 70px rgba(0,0,0,.6);border-radius:18px;overflow:hidden">
+      <div style="padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font-weight:800;letter-spacing:.3px">Admin (тимчасово)</div>
+          <div style="opacity:.75;font-size:12px">Без серверної адмін-функції можна безпечно міняти тільки свій гаманець.</div>
+        </div>
+        <button class="btn" id="adminClose">✕</button>
+      </div>
+      <div style="padding:14px 16px;display:grid;gap:10px">
+        <div style="display:grid;gap:6px">
+          <div style="font-weight:700">1) Мій гаманець (wallets)</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input id="adminSelfBalance" inputmode="decimal" placeholder="Balance" style="flex:1;min-width:160px;background:#060a12;color:#e8eefc;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 12px">
+            <input id="adminSelfCurrency" placeholder="UAH" style="width:90px;background:#060a12;color:#e8eefc;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 12px">
+            <button class="btn" id="adminSelfSave">Зберегти</button>
+          </div>
+          <div style="opacity:.75;font-size:12px">Працює з RLS: UPDATE дозволений лише для <code>user_id = auth.uid()</code>.</div>
+        </div>
+        <hr style="border:0;border-top:1px solid rgba(255,255,255,.08)"/>
+        <div style="display:grid;gap:6px">
+          <div style="font-weight:700">2) Користувачі (потрібен бекенд)</div>
+          <div style="opacity:.8;font-size:12px;line-height:1.35">
+            З браузера з anon-key не можна безпечно читати список користувачів або міняти чужі баланси (це потребує service-role / Edge Function).
+            UI нижче — заготовка під Edge Function (коли підключиш).
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input id="adminTargetEmail" placeholder="user@email" style="flex:1;min-width:220px;background:#060a12;color:#e8eefc;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 12px">
+            <input id="adminTargetBalance" inputmode="decimal" placeholder="Balance" style="width:140px;background:#060a12;color:#e8eefc;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 12px">
+            <button class="btn" id="adminTargetSave">Apply</button>
+          </div>
+          <div style="opacity:.75;font-size:12px">Поки що натискання просто пише в LOG, бо немає endpoint.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+<script>
+(() => {
+  const BUILD = 'BTLIDER v23.8 keep_visual + admin_email_gate + nav_balance_fix build 2026-02-04 12:37:52 UTC';
+  const SB_URL = "https://vshzqiqppgitnhuqmcgn.supabase.co";
+  const SB_ANON = "sb_publishable_DJSaoIKQQPU_5rio3xt8ZQ_8H_6Xs4X";
+  
+  // ASSISTANT PATCH v23.8: admin gating (only these emails see logs/admin)
+  const ADMIN_EMAILS = ['bondarenkodarrderrrr@gmail.com','bondarenkodarderrrr@gmail.com'].map(s=>s.toLowerCase());
+  function isAdminEmail(email){ try{ return !!email && ADMIN_EMAILS.includes(String(email).toLowerCase()); }catch(e){ return false; } }
+  function setAdminUI(isAdmin){ try{ document.body.classList.toggle('btl-admin', !!isAdmin); window.__BTLIDER_IS_ADMIN = !!isAdmin; }catch(e){} }
+const BASE_PATH = "/Betlider/"; // GitHub Pages repo path
+  const frame = document.getElementById('appFrame');
+    // ASSISTANT PATCH v23.8: broadcast admin state to child pages
+  function sendAdminState(){
+    try{
+      const st = window.BTLIDER && window.BTLIDER.state;
+      const email = st && st.user && st.user.email ? String(st.user.email) : '';
+      const isAdmin = isAdminEmail(email);
+      frame && frame.contentWindow && frame.contentWindow.postMessage({__btlider:true,type:'BTLIDER_ADMIN_STATE', isAdmin:isAdmin, email:email}, '*');
+    }catch(e){}
+  }
+const splash = document.getElementById('splash');
+  const fill = document.getElementById('progressFill');
+  const ptxt = document.getElementById('progressText');
+
+  const logPanel = document.getElementById('logPanel');
+  const logBody = document.getElementById('logBody');
+  const copyBtn = document.getElementById('copyLogBtn');
+  const clearBtn = document.getElementById('clearLogBtn');
+  const hideBtn = document.getElementById('hideLogBtn');
+  const toggleBtn = document.getElementById('logToggle');
+
+  const lines = [];
+  function stamp() {
+    const d = new Date();
+    return d.toTimeString().slice(0,8);
+  }
+  function addLine(level, msg, data) {
+    const t = `[${stamp()}] ${msg}` + (data !== undefined ? ` | ${JSON.stringify(data)}` : '');
+    lines.push(t);
+    const div = document.createElement('div');
+    if(level==='err') div.className='err';
+    if(level==='warn') div.className='warn';
+    if(level==='ok') div.className='ok';
+    div.textContent = t;
+    logBody.appendChild(div);
+    logBody.scrollTop = logBody.scrollHeight;
+  }
+  // Compatibility: some old code may call log(...)
+  window.log = (...a) => addLine('ok', a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' '));
+  window.__BTLIDER_LOG = (lvl,msg,data) => addLine(lvl,msg,data);
+
+  function setProgress(p) {
+    const pct = Math.max(0, Math.min(100, p|0));
+    fill.style.width = pct + '%';
+    ptxt.textContent = `Завантаження ${pct}%`;
+    if(pct >= 100) {
+      setTimeout(() => splash.style.display='none', 150);
+    }
+  }
+
+  copyBtn.onclick = async () => {
+    const txt = lines.join('\n');
+    try { await navigator.clipboard.writeText(txt); addLine('ok','COPIED'); }
+    catch(e) { addLine('warn','COPY_FAIL', String(e && e.message || e)); }
+  };
+  window.addLine = window.__BTLIDER_LOG; // alias
+
+  clearBtn.onclick = () => { lines.length=0; logBody.textContent=''; addLine('ok','CLEARED'); };
+  hideBtn.onclick = () => logPanel.classList.add('is-hidden');
+  toggleBtn.onclick = () => logPanel.classList.toggle('is-hidden');
+
+  // Clean offline leftovers that could fake auth
+  const offlineKeys = ['gorilla_current','gorilla_users','BTLIDER_AUTH','BTLIDER_AUTHED','BTLIDER_DEMO_USER'];
+  offlineKeys.forEach(k => {
+    if(localStorage.getItem(k) !== null) {
+      localStorage.removeItem(k);
+      addLine('warn', `CLEAN: removed ${k}`);
+    }
+  });
+
+  addLine('ok', 'BUILD: ' + BUILD);
+
+  // Global error hooks
+  window.addEventListener('error', (e) => {
+    addLine('err', 'ERROR: ' + (e.message || 'unknown'), {filename:e.filename, lineno:e.lineno, colno:e.colno});
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    addLine('err', 'UNHANDLED_REJECTION', String(e.reason && e.reason.message || e.reason || 'unknown'));
+  });
+
+  // Supabase client
+  const supabase = window.supabase.createClient(SB_URL, SB_ANON, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    }
+  });
+  window.BTLIDER = window.BTLIDER || {};
+  window.BTLIDER.supabase = supabase;
+  // ===== ASSISTANT PATCH v23: Wallet sync (Supabase wallets) =====
+  window.BTLIDER = window.BTLIDER || {};
+  setAdminUI(false);
+  window.BTLIDER.state = window.BTLIDER.state || { authed:false, user:null, balance:null, currency:'UAH' };
+
+  async function fetchWallet(user){
+    if(!user) return null;
+    try{
+      addLine('DB_CALL: wallets.select', {user:user.email});
+      let { data, error } = await supabase.from('wallets').select('balance,currency').eq('user_id', user.id).maybeSingle();
+      if(error){
+        // if table missing or RLS blocks, log and return null
+        addLine('DB_ERR: wallets.select', {message:error.message, code:error.code||null});
+        return null;
+      }
+      if(!data){
+        addLine('DB_CALL: wallets.insert', {user:user.email});
+        const ins = await supabase.from('wallets').insert({ user_id:user.id, balance:0, currency:'UAH' }).select('balance,currency').maybeSingle();
+        if(ins.error){
+          addLine('DB_ERR: wallets.insert', {message:ins.error.message, code:ins.error.code||null});
+          return null;
+        }
+        data = ins.data;
+      }
+      const bal = Number(data.balance||0);
+      const cur = String(data.currency||'UAH');
+      window.BTLIDER.state.balance = bal;
+      window.BTLIDER.state.currency = cur;
+      // mirror for legacy/offline widgets (display only)
+      try{
+        localStorage.setItem('BTLIDER_BALANCE', String(bal));
+        localStorage.setItem('balance', String(bal));
+        localStorage.setItem('user_balance', String(bal));
+        localStorage.setItem('currency', cur);
+      }catch(e){}
+      // broadcast to iframe
+      try{
+        const fr = document.getElementById('appFrame');
+        fr && fr.contentWindow && fr.contentWindow.postMessage({ __btlider: true, type:'BTLIDER_BALANCE', balance:bal, currency:cur }, '*');
+      }catch(e){}
+      addLine('DB_RES: wallets', {balance:bal, currency:cur});
+      return {balance:bal, currency:cur};
+    }catch(e){
+      addLine('DB_EX: wallets', {message:String(e)});
+      return null;
+    }
+  }
+
+  async function refreshSessionAndWallet(source){
+    const sess = await getSessionSafe(source||'refresh');
+    const s = sess && sess.session ? sess.session : null;
+    window.BTLIDER.state.authed = !!s;
+    window.BTLIDER.state.user = s ? s.user : null;
+        try{ setAdminUI(isAdminEmail(window.BTLIDER.state.user && window.BTLIDER.state.user.email)); sendAdminState(); }catch(e){}
+if(s && s.user){
+      await fetchWallet(s.user);
+    }else{
+      window.BTLIDER.state.balance = null;
+      window.BTLIDER.state.currency = 'UAH';
+    }
+    // notify iframe about auth state
+    try{
+      const fr = document.getElementById('appFrame');
+      fr && fr.contentWindow && fr.contentWindow.postMessage({ __btlider:true, type:'BTLIDER_AUTH_CHANGED', authed:window.BTLIDER.state.authed, user:window.BTLIDER.state.user, balance:window.BTLIDER.state.balance, currency:window.BTLIDER.state.currency }, '*');
+    }catch(e){}
+    return window.BTLIDER.state;
+  }
+
+  // expose for child pages
+  window.BTLIDER.getState = () => ({...window.BTLIDER.state});
+  window.BTLIDER.refresh = () => refreshSessionAndWallet('manual');
+
+
+  async function getSessionSafe(source) {
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if(error) addLine('err','AUTH_ERR getSession', error.message);
+      return data && data.session ? data.session : null;
+    } catch(e) {
+      addLine('err','AUTH_ERR getSession EX', String(e && e.message || e));
+      return null;
+    }
+  }
+
+  function navTo(path) {
+    frame.src = path;
+    addLine('ok', 'route -> ' + path);
+    setProgress(30);
+  }
+
+  
+
+  function routeTo(path){
+    // alias for legacy calls
+    try{ navTo(path); }catch(e){ try{ frame.src = path; }catch(_e){} }
+  }
+function setAuthed(isAuthed, source) {
+    window.__BTLIDER_AUTHED = !!isAuthed;
+    addLine('ok', 'AUTH: session=' + (isAuthed ? 'YES' : 'NO'), {source});
+    // toggle admin button (only when authed + admin mode enabled)
+    try{
+      const adminBtn = document.getElementById('adminBtn');
+      const st = window.BTLIDER && window.BTLIDER.state;
+      const adminMode = (localStorage.getItem('BTLIDER_ADMIN_MODE') === '1');
+            const email = (st && st.user && st.user.email) ? String(st.user.email) : '';
+      const isAdmin = isAdminEmail(email);
+      setAdminUI(isAdmin);
+      sendAdminState();
+if(adminBtn){
+        adminBtn.style.display = (isAuthed && adminMode && (window.__BTLIDER_IS_ADMIN===true)) ? 'block' : 'none';
+      }
+      if(isAuthed && st && st.balance != null){
+        const sb = document.getElementById('adminSelfBalance');
+        const sc = document.getElementById('adminSelfCurrency');
+        if(sb) sb.value = String(st.balance);
+        if(sc) sc.value = String(st.currency||'UAH');
+      }
+      if(isAuthed && !adminMode){
+        // keep silent unless user enabled admin mode intentionally
+      }
+    }catch(e){}
+  }
+
+  
+  // ===== ASSISTANT PATCH v23.4: hash routes (promo) =====
+  function handleHashRoute(){
+    try{
+      const h = (location.hash||'').replace('#','').trim();
+      if(!h) return;
+      if(h === 'BTLIDER_PROMO'){
+        addLine('ok','HASH_ROUTE: BTLIDER_PROMO');
+        routeTo('promo_bonus.html');
+      }
+      if(h === 'BTLIDER_PROFILE'){
+        addLine('ok','HASH_ROUTE: BTLIDER_PROFILE');
+        routeTo('profile.html');
+      }
+    }catch(e){}
+  }
+  window.addEventListener('hashchange', handleHashRoute);
+
+  
+  // ===== ASSISTANT PATCH v23.4: stub modal for blocked links =====
+  function showStubModal(title){
+    try{
+      const m = document.getElementById('stubModal');
+      const t = document.getElementById('stubTitle');
+      if(t) t.textContent = title || 'Скоро';
+      if(m) m.style.display = 'flex';
+    }catch(e){}
+  }
+
+  // Bridge API for iframes
+  window.BTLIDER.Auth = {
+    
+      session: async function(){ try{ return await supabase.auth.getSession(); }catch(e){ throw e; } },
+      getSession: async function(){ try{ return await supabase.auth.getSession(); }catch(e){ throw e; } },
+async register(email, password) {
+      addLine('ok','AUTH_CALL: signUp', {email});
+      const { data, error } = await supabase.auth.signUp({
+        email, password,
+        options: {
+          emailRedirectTo: location.origin + BASE_PATH + 'index.html'
+        }
+      });
+      if(error) {
+        addLine('err','AUTH_ERR: signUp', error.message);
+        return { ok:false, error: error.message };
+      }
+      // When confirm email is OFF => session may be present
+      const sess = data && data.session ? data.session : null;
+      addLine('ok','AUTH_RES: signUp', {session: !!sess, user: !!(data && data.user)});
+      return { ok:true, data:data };
+    },
+    async login(email, password) {
+      addLine('ok','AUTH_CALL: signInWithPassword', {email});
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if(error) {
+        addLine('err','AUTH_ERR: signInWithPassword', error.message);
+        return { ok:false, error: error.message };
+      }
+      addLine('ok','AUTH_RES: signInWithPassword', {session: !!(data && data.session)});
+      return data;
+    },
+    async logout() {
+      addLine('ok','AUTH_CALL: signOut');
+      const { error } = await supabase.auth.signOut();
+      if(error) {
+        addLine('err','AUTH_ERR: signOut', error.message);
+        return { ok:false, error: error.message };
+      }
+      addLine('ok','AUTH_RES: signOut');
+      return { ok:true };
+    }
+    ,async session(){
+      const { data, error } = await supabase.auth.getSession();
+      if(error){ addLine('err','AUTH_ERR: getSession', error.message); return null; }
+      return data && data.session ? data.session : null;
+    }
+    ,async getSession(){ return this.session(); }
+
+  };
+
+  // Auth state changes
+  supabase.auth.onAuthStateChange((evt, session) => {
+    addLine('ok', 'AUTH_EVT: ' + evt, session ? {user:session.user && session.user.email} : null);
+    setAuthed(!!session, evt);
+    try{ refreshSessionAndWallet('AUTH_EVT:'+evt); }catch(_e){}
+    // notify iframe
+    try {
+      frame.contentWindow && frame.contentWindow.postMessage({__btlider:true,type:'BTLIDER_AUTH_CHANGED', authed: !!session, user: session?session.user:null}, '*');
+    } catch(_e) {}
+    // route
+    if(session) {
+      navTo('authed.html');
+      setProgress(80);
+    } else {
+      navTo('guest.html');
+      setProgress(60);
+    }
+  });
+
+  // Boot routing (lazy iframe to avoid freeze)
+  (async () => {
+    setProgress(5);
+    // Let first frame paint
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    setProgress(12);
+
+    const sess = await getSessionSafe('boot');
+    setAuthed(!!sess, 'boot');
+    try{ await refreshSessionAndWallet('boot');
+  handleHashRoute(); }catch(_e){}
+    // Delay iframe heavy load a bit to avoid jank
+    setTimeout(() => {
+      if(sess) navTo('authed.html'); else navTo('guest.html');
+      setProgress(65);
+    }, 50);
+
+    // If iframe doesn't load in time, show error but keep log
+    const t0 = Date.now();
+    let loaded = false;
+    frame.addEventListener('load', () => {
+      loaded = true;
+      setProgress(100);
+    }, { once:true });
+    setTimeout(() => {
+      if(!loaded) {
+        window.__BTLIDER_LOG && window.__BTLIDER_LOG('warn','WARN: iframe load timeout', {ms: Date.now()-t0, src: frame.src});
+        // Keep splash but allow user to click LOG and see errors
+      }
+    }, 8000);
+  })();
+})();
+
+  // ===== ASSISTANT PATCH v23: child commands =====
+  const __cmdDebounce = Object.create(null);
+  window.addEventListener('message', (ev) => {
+    const d = ev && ev.data;
+    if(!d || !d.__btlider) return;
+    // debounce spammy commands
+    try{ const k = d.type||''; const now=Date.now(); if(k){ if(__cmdDebounce[k] && (now-__cmdDebounce[k])<350) return; __cmdDebounce[k]=now; } }catch(e){}
+    if(d.type === 'NAV_HOME'){ window.__BTLIDER_LOG && window.__BTLIDER_LOG('ok','CMD: NAV_HOME'); try{ (window.BTLIDER.state && window.BTLIDER.state.authed) ? routeTo('authed.html') : routeTo('guest.html'); }catch(e){} }
+    if(d.type === 'ROUTE_HOME'){ window.__BTLIDER_LOG && window.__BTLIDER_LOG('ok','CMD: ROUTE_HOME'); try{ (window.BTLIDER.state && window.BTLIDER.state.authed) ? routeTo('authed.html') : routeTo('guest.html'); }catch(e){} }
+        if(d.type === 'OPEN_ADMIN'){
+      window.__BTLIDER_LOG && window.__BTLIDER_LOG('ok','CMD: OPEN_ADMIN');
+      try{ routeTo('admin.html'); }catch(e){}
+    }
+if(d.type === 'OPEN_PROMO'){
+      window.__BTLIDER_LOG && window.__BTLIDER_LOG('ok','CMD: OPEN_PROMO');
+      try{ routeTo('promo_bonus.html'); }catch(e){}
+    }
+    if(d.type === 'OPEN_PROFILE'){
+      window.__BTLIDER_LOG && window.__BTLIDER_LOG('ok','CMD: OPEN_PROFILE');
+      try{ routeTo('profile.html'); }catch(e){}
+    }
+    if(d.type === 'OPEN_STUB'){
+      window.__BTLIDER_LOG && window.__BTLIDER_LOG('warn','CMD: OPEN_STUB', d);
+      try{ showStubModal(d && d.label ? d.label : 'Скоро'); }catch(e){}
+    }
+    if(d.type === 'NEED_BALANCE'){
+      window.__BTLIDER_LOG && window.__BTLIDER_LOG('ok','CMD: NEED_BALANCE');
+      const st = window.BTLIDER.getState ? window.BTLIDER.getState() : null;
+      try{
+        const fr = document.getElementById('appFrame');
+        fr && fr.contentWindow && fr.contentWindow.postMessage({ __btlider:true, type:'BTLIDER_BALANCE', balance:st?st.balance:null, currency:st?st.currency:'UAH' }, '*');
+      }catch(e){}
+    }
+  }, false);
+</script>
+
+  <!-- ASSISTANT PATCH v23.4: STUB MODAL -->
+  <div id="stubModal" style="display:none;position:fixed;inset:0;z-index:99999;align-items:center;justify-content:center;background:rgba(0,0,0,.65);backdrop-filter:blur(6px);">
+    <div style="width:min(92vw,420px);border-radius:16px;padding:16px 14px;background:linear-gradient(180deg,rgba(28,28,35,.96),rgba(10,10,14,.96));border:1px solid rgba(255,255,255,.10);box-shadow:0 0 0 1px rgba(0,255,170,.06),0 18px 60px rgba(0,0,0,.65);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <div style="font-weight:800;font-size:16px;letter-spacing:.2px;" id="stubTitle">Скоро</div>
+        <button id="stubClose" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);color:#fff;border-radius:10px;padding:6px 10px;cursor:pointer;">Закрити</button>
+      </div>
+      <div style="margin-top:10px;opacity:.85;font-size:13px;line-height:1.35;">Ця кнопка була прив’язана до Gorilla. Ми вимкнули зовнішні переходи. Потрібно підключити нашу функцію під цю кнопку (буде зроблено по списку).</div>
+      <div style="margin-top:12px;display:flex;gap:10px;justify-content:flex-end;">
+        <button id="stubGoPromo" style="background:linear-gradient(90deg,rgba(0,255,170,.22),rgba(0,140,255,.18));border:1px solid rgba(0,255,170,.25);color:#fff;border-radius:12px;padding:10px 12px;cursor:pointer;">Промо</button>
+        <button id="stubGoProfile" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);color:#fff;border-radius:12px;padding:10px 12px;cursor:pointer;">Профіль</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
